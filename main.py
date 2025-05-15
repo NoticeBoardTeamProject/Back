@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi import FastAPI, Depends, HTTPException, status, Request, Body
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
@@ -10,6 +10,8 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta
 import smtplib
 from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from fastapi.middleware.cors import CORSMiddleware
 
 
 DATABASE_URL = "sqlite:///./bulletin_board.db"
@@ -26,6 +28,14 @@ SMTP_USER = "bodyaraz7@gmail.com"
 SMTP_PASS = "hqmmpdzlupuyvijl"
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],           
+    allow_credentials=True,        
+    allow_methods=["*"],           
+    allow_headers=["*"],           
+)
 
 class User(Base):
     __tablename__ = "users"
@@ -87,6 +97,10 @@ class Token(BaseModel):
     access_token: str
     token_type: str
 
+class LoginForm(BaseModel):
+    email: EmailStr
+    password: str
+
 def get_db():
     db = SessionLocal()
     try:
@@ -108,11 +122,21 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
 
 def send_verification_email(email: str, token: str):
     link = f"http://localhost:8000/verify-email?token={token}"
-    body = f"Перейдіть за посиланням, щоб підтвердити email: {link}"
-    msg = MIMEText(body)
+    html_body = f"""
+    <html>
+      <body>
+        <p>Щоб підтвердити свій email, натисніть кнопку нижче:</p>
+        <a href="{link}" style="display: inline-block; padding: 10px 20px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;">Підтвердити Email</a>
+        <p>Якщо кнопка не працює, відкрийте це посилання:<br>{link}</p>
+      </body>
+    </html>
+    """
+
+    msg = MIMEMultipart("alternative")
     msg["Subject"] = "Підтвердження email"
-    msg["From"] = SMTP_USER
+    msg["From"] = "Bulletin Board"
     msg["To"] = email
+    msg.attach(MIMEText(html_body, "html"))
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(SMTP_USER, SMTP_PASS)
@@ -152,8 +176,8 @@ def verify_email(token: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Invalid token")
 
 @app.post("/login", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = db.query(User).filter_by(email=form_data.username).first()
+def login(form_data: LoginForm = Body(...), db: Session = Depends(get_db)):
+    user = db.query(User).filter_by(email=form_data.email).first()
     if not user or not verify_password(form_data.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not user.isEmailConfirmed:

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Request, Body, Header,Form
+from fastapi import FastAPI, Depends, HTTPException, status, Request, Body, Header,Form,UploadFile, File
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
@@ -14,6 +14,8 @@ from email.mime.multipart import MIMEMultipart
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import HTMLResponse
+import os
+from typing import List
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
@@ -67,6 +69,7 @@ class Post(Base):
     isPromoted = Column(Boolean, default=False)
     createdAt = Column(DateTime, default=datetime.utcnow)
     userId = Column(Integer, ForeignKey("users.id"))
+    category_id = Column(Integer, ForeignKey("categories.id"))  
     user = relationship("User")
 
 class Category(Base):
@@ -110,6 +113,22 @@ class PasswordResetRequest(BaseModel):
 class PasswordReset(BaseModel):
     token: str
     new_password: str
+
+class PostCreate(BaseModel):
+    title: str
+    caption: str
+    price: int
+    images: str = ""
+    tags: str = ""
+    category_id: int
+
+class CategoryCreate(BaseModel):
+    name: str
+
+class UpdateProfile(BaseModel):
+    name: str
+    surname: str
+    phone: str
 
 def get_db():
     db = SessionLocal()
@@ -217,28 +236,28 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
     return {"access_token": token, "token_type": "bearer"}
 
-@app.post("/init-owner", response_model=Token)
-def create_initial_owner(user: UserCreate, db: Session = Depends(get_db)):
-    existing_owner = db.query(User).filter_by(role="owner").first()
-    if existing_owner:
-        raise HTTPException(status_code=400, detail="Owner already exists")
+# @app.post("/init-owner", response_model=Token)
+# def create_initial_owner(user: UserCreate, db: Session = Depends(get_db)):
+#     existing_owner = db.query(User).filter_by(role="owner").first()
+#     if existing_owner:
+#         raise HTTPException(status_code=400, detail="Owner already exists")
 
-    hashed_pw = hash_password(user.password)
-    user_data = user.dict()
-    user_data.pop("password")
+#     hashed_pw = hash_password(user.password)
+#     user_data = user.dict()
+#     user_data.pop("password")
 
-    db_user = User(
-        **user_data,
-        password=hashed_pw,
-        role="owner",
-        isEmailConfirmed=True
-    )
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
+#     db_user = User(
+#         **user_data,
+#         password=hashed_pw,
+#         role="owner",
+#         isEmailConfirmed=True
+#     )
+#     db.add(db_user)
+#     db.commit()
+#     db.refresh(db_user)
 
-    token = create_access_token({"sub": db_user.email})
-    return {"access_token": token, "token_type": "bearer"}
+#     token = create_access_token({"sub": db_user.email})
+#     return {"access_token": token, "token_type": "bearer"}
 
 @app.post("/users/{user_id}/make-admin")
 def make_user_admin(
@@ -258,12 +277,12 @@ def make_user_admin(
 @app.post("/forgot-password")
 def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter_by(email=request.email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Користувача з таким email не знайдено")
+    if user:
+        token = create_access_token({"sub": user.email}, expires_delta=timedelta(hours=1))
+        send_password_reset_email(user.email, token)
     
-    token = create_access_token({"sub": user.email}, expires_delta=timedelta(hours=1))
-    send_password_reset_email(user.email, token)
-    return {"message": "Лист для скидання пароля було відправлено на email"}
+    return {"message": "Якщо такий email існує, на нього надіслано листа для зміни пароля"}
+
 
 @app.post("/reset-password")
 def reset_password(token: str = Form(...), new_password: str = Form(...), db: Session = Depends(get_db)):
@@ -285,6 +304,56 @@ def reset_password(token: str = Form(...), new_password: str = Form(...), db: Se
     except JWTError:
         raise HTTPException(status_code=400, detail="Невалідний або прострочений токен")
 
+@app.post("/posts")
+async def create_post(
+    title: str = Form(...),
+    caption: str = Form(...),
+    price: int = Form(...),
+    tags: str = Form(""),
+    category_id: int = Form(...),
+    images: List[UploadFile] = File([]),  
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    import base64
+    image_list = []
+
+    for image in images:
+        contents = await image.read()
+        encoded = base64.b64encode(contents).decode("utf-8")
+        image_list.append(encoded)
+
+    import json
+    encoded_images = json.dumps(image_list)
+
+    new_post = Post(
+        title=title,
+        caption=caption,
+        price=price,
+        tags=tags,
+        category_id=category_id,
+        images=encoded_images,
+        userId=current_user.id
+    )
+    db.add(new_post)
+    db.commit()
+    db.refresh(new_post)
+    return new_post
+
+
+@app.get("/posts")
+def get_posts(db: Session = Depends(get_db)):
+    return db.query(Post).all()
+
+@app.get("/posts/{post_id}")
+def get_post(post_id: int, db: Session = Depends(get_db)):
+    post = db.query(Post).filter_by(id=post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Оголошення не знайдено")
+    import json
+    post.images = json.loads(post.images or "[]")
+    return post
+
 @app.get("/reset-password-form", response_class=HTMLResponse)
 def reset_password_form(token: str):
     html_content = f"""
@@ -301,7 +370,7 @@ def reset_password_form(token: str):
     </html>
     """
     return html_content
-    
+
 @app.get("/verify-email")
 def verify_email(token: str, db: Session = Depends(get_db)):
     try:
@@ -329,6 +398,10 @@ def read_users_me(current_user: User = Depends(get_current_user)):
         "createdAt": current_user.createdAt
     }
 
+@app.get("/categories")
+def list_categories(db: Session = Depends(get_db)):
+    return db.query(Category).all()
+
 @app.post("/login", response_model=Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(User).filter_by(email=form_data.username).first() 
@@ -339,4 +412,71 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     token = create_access_token({"sub": user.email})
     return {"access_token": token, "token_type": "bearer"}
 
+@app.post("/categories")
+def create_category(category: CategoryCreate, db: Session = Depends(get_db), _: User = Depends(require_role(["admin", "owner"]))):
+    new_cat = Category(name=category.name)
+    db.add(new_cat)
+    db.commit()
+    return new_cat
+
+@app.put("/update-profile")
+def update_profile(data: UpdateProfile, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    current_user.name = data.name
+    current_user.surname = data.surname
+    current_user.phone = data.phone
+    db.commit()
+    db.refresh(current_user)
+    return {"message": "Профіль оновлено успішно"}
+
+@app.put("/categories/{cat_id}")
+def update_category(cat_id: int, category: CategoryCreate, db: Session = Depends(get_db)):
+    cat = db.query(Category).filter_by(id=cat_id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail="Категорію не знайдено")
+    cat.name = category.name
+    db.commit()
+    return cat
+
+@app.delete("/posts/{post_id}")
+def delete_post(post_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    db_post = db.query(Post).filter_by(id=post_id).first()
+    if not db_post:
+        raise HTTPException(status_code=404, detail="Оголошення не знайдено")
+    if db_post.userId != current_user.id:
+        raise HTTPException(status_code=403, detail="Немає прав на видалення цього оголошення")
+    db.delete(db_post)
+    db.commit()
+    return {"message": "Оголошення видалено"}
+
+@app.delete("/categories/{cat_id}")
+def delete_category(cat_id: int, db: Session = Depends(get_db), _: User = Depends(require_role(["admin", "owner"]))):
+    cat = db.query(Category).filter_by(id=cat_id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail="Категорію не знайдено")
+    db.delete(cat)
+    db.commit()
+    return {"message": "Категорію видалено"}
+
 Base.metadata.create_all(bind=engine)
+
+def create_default_owner():
+    db = SessionLocal()
+    try:
+        user_count = db.query(User).count()
+        if user_count == 0:
+            owner = User(
+                name="Bodya",
+                surname="Raz",
+                phone="+380562323765",
+                email="Razum_ld54@student.itstep.org",
+                password=hash_password("123456789"),
+                role="owner",
+                isEmailConfirmed=True
+            )
+            db.add(owner)
+            db.commit()
+            print("[INFO] Default owner was created")
+    finally:
+        db.close()
+
+create_default_owner()

@@ -15,7 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import HTMLResponse
 import os
-from typing import List
+from typing import List,Optional
+import json
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
@@ -176,8 +177,8 @@ def send_password_reset_email(email: str, token: str):
     html_body = f"""
     <html>
       <body>
-        <p>Щоб змінити пароль, натисніть кнопку нижче:</p>
-        <a href="{link}" style="display: inline-block; padding: 10px 20px; background-color: #f44336; color: white; text-decoration: none; border-radius: 5px;">Змінити пароль</a>
+        <p>Щоб скинути пароль, натисніть кнопку нижче:</p>
+        <a href="{link}" style="display: inline-block; padding: 10px 20px; background-color: #f44336; color: white; text-decoration: none; border-radius: 5px;">Скинути пароль</a>
         <p>Якщо кнопка не працює, відкрийте це посилання:<br>{link}</p>
       </body>
     </html>
@@ -216,6 +217,13 @@ def require_role(allowed_roles: list[str]):
         return current_user
     return role_checker
 
+def safe_load_images(images_str: str):
+    if not images_str:
+        return []
+    try:
+        return json.loads(images_str)
+    except json.JSONDecodeError:
+        return []
 
 @app.post("/register", response_model=Token)
 def register(user: UserCreate, db: Session = Depends(get_db)):
@@ -340,6 +348,43 @@ async def create_post(
     db.refresh(new_post)
     return new_post
 
+@app.get("/posts/search")
+def search_posts(
+    title: Optional[str] = None,
+    min_price: Optional[int] = None,
+    max_price: Optional[int] = None,
+    category_name: Optional[str] = None,
+    tags: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(Post)
+
+    if title:
+        query = query.filter(Post.title.ilike(f"%{title}%"))
+    if min_price is not None:
+        query = query.filter(Post.price >= min_price)
+    if max_price is not None:
+        query = query.filter(Post.price <= max_price)
+    if category_name:
+        category = db.query(Category).filter(Category.name.ilike(category_name)).first()
+        if category:
+            query = query.filter(Post.category_id == category.id)
+        else:
+            raise HTTPException(status_code=404, detail="Категорія не знайдена")
+    if tags:
+        tag_list = [tag.strip().lower() for tag in tags.split(",")]
+        for tag in tag_list:
+            query = query.filter(Post.tags.ilike(f"%{tag}%"))
+
+    results = query.all()
+
+    if not results:
+        raise HTTPException(status_code=404, detail="Оголошення за заданими параметрами не знайдено")
+
+    for post in results:
+        post.images = safe_load_images(post.images)
+
+    return results
 
 @app.get("/posts")
 def get_posts(db: Session = Depends(get_db)):
@@ -350,8 +395,7 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
     post = db.query(Post).filter_by(id=post_id).first()
     if not post:
         raise HTTPException(status_code=404, detail="Оголошення не знайдено")
-    import json
-    post.images = json.loads(post.images or "[]")
+    post.images = safe_load_images(post.images)
     return post
 
 @app.get("/reset-password-form", response_class=HTMLResponse)
@@ -364,7 +408,7 @@ def reset_password_form(token: str):
           <input type="hidden" name="token" value="{token}" />
           <label>Новий пароль:</label><br>
           <input type="password" name="new_password" required/><br><br>
-          <button type="submit">Змінити пароль</button>
+          <button type="submit">Скинути пароль</button>
         </form>
       </body>
     </html>

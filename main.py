@@ -131,6 +131,20 @@ class UpdateProfile(BaseModel):
     surname: str
     phone: str
 
+class ChatCreate(BaseModel):
+    user_to: int
+    message: str
+
+class ChatResponse(BaseModel):
+    id: int
+    user_from: int
+    user_to: int
+    message: str
+    timestamp: datetime
+
+    class Config:
+        orm_mode = True
+
 def get_db():
     db = SessionLocal()
     try:
@@ -395,8 +409,13 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
     post = db.query(Post).filter_by(id=post_id).first()
     if not post:
         raise HTTPException(status_code=404, detail="Оголошення не знайдено")
+    
+    post.views += 1
+    db.commit()
+
     post.images = safe_load_images(post.images)
     return post
+
 
 @app.get("/reset-password-form", response_class=HTMLResponse)
 def reset_password_form(token: str):
@@ -462,6 +481,50 @@ def create_category(category: CategoryCreate, db: Session = Depends(get_db), _: 
     db.add(new_cat)
     db.commit()
     return new_cat
+
+@app.post("/chat/send", response_model=ChatResponse)
+def send_message(
+    chat: ChatCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    recipient = db.query(User).filter_by(id=chat.user_to).first()
+    if not recipient:
+        raise HTTPException(status_code=404, detail="Користувача не знайдено")
+
+    message = Chat(
+        user_from=current_user.id,
+        user_to=chat.user_to,
+        message=chat.message
+    )
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+    return message
+
+@app.get("/chat/with/{other_user_id}", response_model=List[ChatResponse])
+def get_conversation(
+    other_user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    messages = db.query(Chat).filter(
+        ((Chat.user_from == current_user.id) & (Chat.user_to == other_user_id)) |
+        ((Chat.user_from == other_user_id) & (Chat.user_to == current_user.id))
+    ).order_by(Chat.timestamp.asc()).all()
+    
+    return messages
+
+@app.get("/chat/my", response_model=List[ChatResponse])
+def get_my_chats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    messages = db.query(Chat).filter(
+        (Chat.user_from == current_user.id) | (Chat.user_to == current_user.id)
+    ).order_by(Chat.timestamp.desc()).all()
+
+    return messages
 
 @app.put("/update-profile")
 def update_profile(data: UpdateProfile, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

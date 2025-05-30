@@ -17,6 +17,7 @@ from fastapi.responses import HTMLResponse
 import os
 from typing import List,Optional
 import json
+from enum import Enum
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
@@ -69,6 +70,7 @@ class Post(Base):
     views = Column(Integer, default=0)
     isPromoted = Column(Boolean, default=False)
     createdAt = Column(DateTime, default=datetime.utcnow)
+    is_scam: bool = Column(Boolean, default=None, nullable=True)
     userId = Column(Integer, ForeignKey("users.id"))
     category_id = Column(Integer, ForeignKey("categories.id"))  
     user = relationship("User")
@@ -144,6 +146,10 @@ class ChatResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
+class ScamStatus(str, Enum):
+    scam = "шахрай"
+    not_scam = "не шахрай"
 
 def get_db():
     db = SessionLocal()
@@ -239,7 +245,7 @@ def safe_load_images(images_str: str):
     except json.JSONDecodeError:
         return []
 
-@app.post("/register", response_model=Token)
+@app.post("/register", response_model=Token,tags=["User"])
 def register(user: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter_by(email=user.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -258,30 +264,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
     return {"access_token": token, "token_type": "bearer"}
 
-# @app.post("/init-owner", response_model=Token)
-# def create_initial_owner(user: UserCreate, db: Session = Depends(get_db)):
-#     existing_owner = db.query(User).filter_by(role="owner").first()
-#     if existing_owner:
-#         raise HTTPException(status_code=400, detail="Owner already exists")
-
-#     hashed_pw = hash_password(user.password)
-#     user_data = user.dict()
-#     user_data.pop("password")
-
-#     db_user = User(
-#         **user_data,
-#         password=hashed_pw,
-#         role="owner",
-#         isEmailConfirmed=True
-#     )
-#     db.add(db_user)
-#     db.commit()
-#     db.refresh(db_user)
-
-#     token = create_access_token({"sub": db_user.email})
-#     return {"access_token": token, "token_type": "bearer"}
-
-@app.post("/users/{user_id}/make-admin")
+@app.post("/users/{user_id}/make-admin",tags=["User"])
 def make_user_admin(
     user_id: int,
     db: Session = Depends(get_db),
@@ -296,7 +279,7 @@ def make_user_admin(
     db.commit()
     return {"message": f"User was successfully promoted to admin"}
 
-@app.post("/forgot-password")
+@app.post("/forgot-password",tags=["User"])
 def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter_by(email=request.email).first()
     if user:
@@ -305,64 +288,7 @@ def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)
     
     return {"message": "Якщо такий email існує, на нього надіслано листа для зміни пароля"}
 
-
-@app.post("/reset-password")
-def reset_password(token: str = Form(...), new_password: str = Form(...), db: Session = Depends(get_db)):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email = payload.get("sub")
-        user = db.query(User).filter_by(email=email).first()
-        if not user:
-            raise HTTPException(status_code=404, detail="Користувача не знайдено")
-
-        user.password = hash_password(new_password)
-        db.commit()
-        return HTMLResponse("""
-            <html><body>
-            <h3>Пароль успішно змінено!</h3>
-            <a href="/login-form">Увійти</a>
-            </body></html>
-        """)
-    except JWTError:
-        raise HTTPException(status_code=400, detail="Невалідний або прострочений токен")
-
-@app.post("/posts")
-async def create_post(
-    title: str = Form(...),
-    caption: str = Form(...),
-    price: int = Form(...),
-    tags: str = Form(""),
-    category_id: int = Form(...),
-    images: List[UploadFile] = File([]),  
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    import base64
-    image_list = []
-
-    for image in images:
-        contents = await image.read()
-        encoded = base64.b64encode(contents).decode("utf-8")
-        image_list.append(encoded)
-
-    import json
-    encoded_images = json.dumps(image_list)
-
-    new_post = Post(
-        title=title,
-        caption=caption,
-        price=price,
-        tags=tags,
-        category_id=category_id,
-        images=encoded_images,
-        userId=current_user.id
-    )
-    db.add(new_post)
-    db.commit()
-    db.refresh(new_post)
-    return new_post
-
-@app.get("/posts/search")
+@app.get("/posts/filter",tags=["Post"])
 def search_posts(
     title: Optional[str] = None,
     min_price: Optional[int] = None,
@@ -400,11 +326,11 @@ def search_posts(
 
     return results
 
-@app.get("/posts")
+@app.get("/posts",tags=["Post"])
 def get_posts(db: Session = Depends(get_db)):
     return db.query(Post).all()
 
-@app.get("/posts/{post_id}")
+@app.get("/posts/{post_id}",tags=["Post"])
 def get_post(post_id: int, db: Session = Depends(get_db)):
     post = db.query(Post).filter_by(id=post_id).first()
     if not post:
@@ -448,7 +374,7 @@ def verify_email(token: str, db: Session = Depends(get_db)):
     except JWTError:
         raise HTTPException(status_code=400, detail="Invalid token")
 
-@app.get("/me")
+@app.get("/me",tags=["User"])
 def read_users_me(current_user: User = Depends(get_current_user)):
     return {
         "id": current_user.id,
@@ -461,11 +387,91 @@ def read_users_me(current_user: User = Depends(get_current_user)):
         "createdAt": current_user.createdAt
     }
 
-@app.get("/categories")
+@app.get("/categories",tags=["Admin"])
 def list_categories(db: Session = Depends(get_db)):
     return db.query(Category).all()
 
-@app.post("/login", response_model=Token)
+@app.get("/chat/with/{other_user_id}", response_model=List[ChatResponse],tags=["User"])
+def get_conversation(
+    other_user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    messages = db.query(Chat).filter(
+        ((Chat.user_from == current_user.id) & (Chat.user_to == other_user_id)) |
+        ((Chat.user_from == other_user_id) & (Chat.user_to == current_user.id))
+    ).order_by(Chat.timestamp.asc()).all()
+    
+    return messages
+
+@app.get("/chat/my", response_model=List[ChatResponse],tags=["User"])
+def get_my_chats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    messages = db.query(Chat).filter(
+        (Chat.user_from == current_user.id) | (Chat.user_to == current_user.id)
+    ).order_by(Chat.timestamp.desc()).all()
+
+    return messages
+    
+@app.post("/reset-password",tags=["User"])
+def reset_password(token: str = Form(...), new_password: str = Form(...), db: Session = Depends(get_db)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email = payload.get("sub")
+        user = db.query(User).filter_by(email=email).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Користувача не знайдено")
+
+        user.password = hash_password(new_password)
+        db.commit()
+        return HTMLResponse("""
+            <html><body>
+            <h3>Пароль успішно змінено!</h3>
+            <a href="/login-form">Увійти</a>
+            </body></html>
+        """)
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Невалідний або прострочений токен")
+
+@app.post("/posts",tags=["Post"])
+async def create_post(
+    title: str = Form(...),
+    caption: str = Form(...),
+    price: int = Form(...),
+    tags: str = Form(""),
+    category_id: int = Form(...),
+    images: List[UploadFile] = File([]),  
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    import base64
+    image_list = []
+
+    for image in images:
+        contents = await image.read()
+        encoded = base64.b64encode(contents).decode("utf-8")
+        image_list.append(encoded)
+
+    import json
+    encoded_images = json.dumps(image_list)
+
+    new_post = Post(
+        title=title,
+        caption=caption,
+        price=price,
+        tags=tags,
+        category_id=category_id,
+        images=encoded_images,
+        userId=current_user.id
+    )
+    db.add(new_post)
+    db.commit()
+    db.refresh(new_post)
+    return new_post
+
+@app.post("/login", response_model=Token,tags=["User"])
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(User).filter_by(email=form_data.username).first() 
     if not user or not verify_password(form_data.password, user.password):
@@ -475,14 +481,14 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     token = create_access_token({"sub": user.email})
     return {"access_token": token, "token_type": "bearer"}
 
-@app.post("/categories")
+@app.post("/categories",tags=["Admin"])
 def create_category(category: CategoryCreate, db: Session = Depends(get_db), _: User = Depends(require_role(["admin", "owner"]))):
     new_cat = Category(name=category.name)
     db.add(new_cat)
     db.commit()
     return new_cat
 
-@app.post("/chat/send", response_model=ChatResponse)
+@app.post("/chat/send", response_model=ChatResponse,tags=["User"])
 def send_message(
     chat: ChatCreate,
     db: Session = Depends(get_db),
@@ -502,31 +508,28 @@ def send_message(
     db.refresh(message)
     return message
 
-@app.get("/chat/with/{other_user_id}", response_model=List[ChatResponse])
-def get_conversation(
-    other_user_id: int,
+@app.put("/posts/{post_id}/verify",tags=["Admin"])
+def verify_post(
+    post_id: int,
+    status: ScamStatus,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_role(["admin", "owner"]))
 ):
-    messages = db.query(Chat).filter(
-        ((Chat.user_from == current_user.id) & (Chat.user_to == other_user_id)) |
-        ((Chat.user_from == other_user_id) & (Chat.user_to == current_user.id))
-    ).order_by(Chat.timestamp.asc()).all()
+    post = db.query(Post).filter_by(id=post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Оголошення не знайдено")
     
-    return messages
+    if status == ScamStatus.scam:
+        post.is_scam = True
+    elif status == ScamStatus.not_scam:
+        post.is_scam = False
+    else:
+        post.is_scam = None
 
-@app.get("/chat/my", response_model=List[ChatResponse])
-def get_my_chats(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    messages = db.query(Chat).filter(
-        (Chat.user_from == current_user.id) | (Chat.user_to == current_user.id)
-    ).order_by(Chat.timestamp.desc()).all()
+    db.commit()
+    return {"message": f"Статус верифікації оголошення оновлено: {status}"}
 
-    return messages
-
-@app.put("/update-profile")
+@app.put("/update-profile",tags=["User"])
 def update_profile(data: UpdateProfile, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     current_user.name = data.name
     current_user.surname = data.surname
@@ -535,7 +538,7 @@ def update_profile(data: UpdateProfile, db: Session = Depends(get_db), current_u
     db.refresh(current_user)
     return {"message": "Профіль оновлено успішно"}
 
-@app.put("/categories/{cat_id}")
+@app.put("/categories/{cat_id}",tags=["Admin"])
 def update_category(cat_id: int, category: CategoryCreate, db: Session = Depends(get_db)):
     cat = db.query(Category).filter_by(id=cat_id).first()
     if not cat:
@@ -544,7 +547,7 @@ def update_category(cat_id: int, category: CategoryCreate, db: Session = Depends
     db.commit()
     return cat
 
-@app.delete("/posts/{post_id}")
+@app.delete("/posts/{post_id}",tags=["User"])
 def delete_post(post_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     db_post = db.query(Post).filter_by(id=post_id).first()
     if not db_post:
@@ -555,7 +558,7 @@ def delete_post(post_id: int, db: Session = Depends(get_db), current_user: User 
     db.commit()
     return {"message": "Оголошення видалено"}
 
-@app.delete("/categories/{cat_id}")
+@app.delete("/categories/{cat_id}",tags=["Admin"])
 def delete_category(cat_id: int, db: Session = Depends(get_db), _: User = Depends(require_role(["admin", "owner"]))):
     cat = db.query(Category).filter_by(id=cat_id).first()
     if not cat:

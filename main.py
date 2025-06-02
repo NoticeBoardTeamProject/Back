@@ -54,6 +54,9 @@ class User(Base):
     password = Column(String)
     isEmailConfirmed = Column(Boolean, default=False)
     isVerified = Column(Boolean, default=False)
+    isBlocked = Column(Boolean, default=False)
+    blockReason = Column(String, nullable=True)
+    blockedAt = Column(DateTime, nullable=True)
     role = Column(String, default="user")
     socialLinks = Column(String)
     avatarBase64 = Column(String)
@@ -94,6 +97,17 @@ class Admin(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     can_block_users = Column(Boolean, default=True)
     can_verify_posts = Column(Boolean, default=True)
+
+class Complaint(Base):
+    __tablename__ = "complaints"
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, ForeignKey("posts.id"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    message = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+    post = relationship("Post")
 
 class UserCreate(BaseModel):
     name: str
@@ -150,6 +164,15 @@ class ChatResponse(BaseModel):
 class ScamStatus(str, Enum):
     scam = "шахрай"
     not_scam = "не шахрай"
+
+class ComplaintCreate(BaseModel):
+    post_id: Optional[int] = None
+    user_id: Optional[int] = None
+    message: str
+
+class BlockUserRequest(BaseModel):
+    isBlocked: bool
+    blockReason: Optional[str] = None
 
 def get_db():
     db = SessionLocal()
@@ -248,7 +271,7 @@ def safe_load_images(images_str: str):
 @app.post("/register", response_model=Token,tags=["User"])
 def register(user: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter_by(email=user.email).first():
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(status_code=400, detail="Email вже зареєстровано")
 
     hashed_pw = hash_password(user.password)
     user_data = user.dict()
@@ -264,7 +287,26 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
     return {"access_token": token, "token_type": "bearer"}
 
-@app.post("/users/{user_id}/make-admin",tags=["User"])
+@app.post("/complaints", tags=["User"])
+def create_complaint(
+    complaint: ComplaintCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if not complaint.post_id and not complaint.user_id:
+        raise HTTPException(status_code=400, detail="Повинно бути вказано або пост, або користувач")
+
+    new_complaint = Complaint(
+        post_id=complaint.post_id,
+        user_id=complaint.user_id,
+        message=complaint.message
+    )
+    db.add(new_complaint)
+    db.commit()
+    db.refresh(new_complaint)
+    return {"message": "Скаргу надіслано"}
+
+@app.post("/users/make-admin/{user_id}",tags=["User"])
 def make_user_admin(
     user_id: int,
     db: Session = Depends(get_db),
@@ -272,12 +314,12 @@ def make_user_admin(
 ):
     user = db.query(User).filter_by(id=user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="Користувача не знайдено")
     if user.role == "admin":
-        return {"message": "User is already an admin"}
+        return {"message": "Користувач уже є адміністратором"}
     user.role = "admin"
     db.commit()
-    return {"message": f"User was successfully promoted to admin"}
+    return {"message": f"Користувача успішно підвищено до адміністратора"}
 
 @app.post("/forgot-password",tags=["User"])
 def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)):
@@ -286,7 +328,7 @@ def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)
         token = create_access_token({"sub": user.email}, expires_delta=timedelta(hours=1))
         send_password_reset_email(user.email, token)
     
-    return {"message": "Якщо такий email існує, на нього надіслано листа для зміни пароля"}
+    return {"message": "Якщо такий email існує, на нього буде надіслано листа для зміни пароля"}
 
 @app.get("/posts/filter",tags=["Post"])
 def search_posts(
@@ -326,6 +368,19 @@ def search_posts(
 
     return results
 
+@app.get("/blocked-users", tags=["Admin"])
+def get_blocked_users(db: Session = Depends(get_db), _: User = Depends(require_role(["admin", "owner"]))):
+    blocked_users = db.query(User).filter(User.isBlocked == True).all()
+    result = []
+    for user in blocked_users:
+        result.append({
+            "id": user.id,
+            "email": user.email,
+            "blockReason": user.blockReason,
+            "blockedAt": user.blockedAt
+        })
+    return result
+
 @app.get("/posts",tags=["Post"])
 def get_posts(db: Session = Depends(get_db)):
     return db.query(Post).all()
@@ -341,7 +396,6 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
 
     post.images = safe_load_images(post.images)
     return post
-
 
 @app.get("/reset-password-form", response_class=HTMLResponse)
 def reset_password_form(token: str):
@@ -367,10 +421,10 @@ def verify_email(token: str, db: Session = Depends(get_db)):
         email = payload.get("sub")
         user = db.query(User).filter_by(email=email).first()
         if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail="Користувача не знайдено")
         user.isEmailConfirmed = True
         db.commit()
-        return {"message": "Email confirmed!"}
+        return {"message": "Email підтверджено!"}
     except JWTError:
         raise HTTPException(status_code=400, detail="Invalid token")
 
@@ -414,8 +468,15 @@ def get_my_chats(
     ).order_by(Chat.timestamp.desc()).all()
 
     return messages
-    
-@app.post("/reset-password",tags=["User"])
+
+@app.get("/complaints", tags=["Admin"])
+def list_complaints(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role(["admin", "owner"]))
+):
+    return db.query(Complaint).order_by(Complaint.created_at.desc()).all()
+
+@app.post("/reset-password")
 def reset_password(token: str = Form(...), new_password: str = Form(...), db: Session = Depends(get_db)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -477,7 +538,9 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     if not user or not verify_password(form_data.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not user.isEmailConfirmed:
-        raise HTTPException(status_code=403, detail="Email not confirmed")
+        raise HTTPException(status_code=403, detail="Email не підтверджено")
+    if user.isBlocked:
+        raise HTTPException(status_code=403, detail=f"Користувач заблокований. Причина: {user.blockReason or 'не вказана'}")
     token = create_access_token({"sub": user.email})
     return {"access_token": token, "token_type": "bearer"}
 
@@ -508,7 +571,7 @@ def send_message(
     db.refresh(message)
     return message
 
-@app.put("/posts/{post_id}/verify",tags=["Admin"])
+@app.put("/posts/verify/{post_id}",tags=["Admin"])
 def verify_post(
     post_id: int,
     status: ScamStatus,
@@ -528,6 +591,28 @@ def verify_post(
 
     db.commit()
     return {"message": f"Статус верифікації оголошення оновлено: {status}"}
+
+@app.put("/users/block/{user_id}", tags=["Admin"])
+def block_user(
+    user_id: int,
+    data: BlockUserRequest = Body(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["admin", "owner"]))
+):
+    user = db.query(User).filter_by(id=user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Користувача не знайдено")
+
+    user.isBlocked = data.isBlocked
+    if data.isBlocked:
+        user.blockReason = data.blockReason
+        user.blockedAt = datetime.utcnow()
+    else:
+        user.blockReason = None
+        user.blockedAt = None
+
+    db.commit()
+    return {"message": f"Користувач {'заблокований' if data.isBlocked else 'розблокований'}"}
 
 @app.put("/update-profile",tags=["User"])
 def update_profile(data: UpdateProfile, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -585,7 +670,6 @@ def create_default_owner():
             )
             db.add(owner)
             db.commit()
-            print("[INFO] Default owner was created")
     finally:
         db.close()
 

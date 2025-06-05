@@ -476,6 +476,27 @@ def list_complaints(
 ):
     return db.query(Complaint).order_by(Complaint.created_at.desc()).all()
 
+@app.get("/admins", tags=["Owner"])
+def get_all_admins(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["owner"]))
+):
+    admins = db.query(User).filter(User.role == "admin").all()
+    
+    if not admins:
+        return {"detail": "Адміністраторів поки що немає"}
+
+    return [
+        {
+            "id": admin.id,
+            "email": admin.email,
+            "isBlocked": admin.isBlocked,
+            "blockReason": admin.blockReason,
+            "blockedAt": admin.blockedAt
+        }
+        for admin in admins
+    ]
+
 @app.post("/reset-password")
 def reset_password(token: str = Form(...), new_password: str = Form(...), db: Session = Depends(get_db)):
     try:
@@ -549,7 +570,7 @@ def create_category(category: CategoryCreate, db: Session = Depends(get_db), _: 
     new_cat = Category(name=category.name)
     db.add(new_cat)
     db.commit()
-    return new_cat
+    return {"detail": "Категорія успішно додана"}
 
 @app.post("/chat/send", response_model=ChatResponse,tags=["User"])
 def send_message(
@@ -603,6 +624,12 @@ def block_user(
     if not user:
         raise HTTPException(status_code=404, detail="Користувача не знайдено")
 
+    if current_user.role == "admin" and user.role in ["admin", "owner"]:
+        raise HTTPException(status_code=403, detail="Недостатньо прав для блокування адміністратора")
+
+    if user.role == "admin" and current_user.role != "owner":
+        raise HTTPException(status_code=403, detail="Тільки власник може блокувати адміністратора")
+
     user.isBlocked = data.isBlocked
     if data.isBlocked:
         user.blockReason = data.blockReason
@@ -651,6 +678,22 @@ def delete_category(cat_id: int, db: Session = Depends(get_db), _: User = Depend
     db.delete(cat)
     db.commit()
     return {"message": "Категорію видалено"}
+
+@app.put("/admins/{user_id}/demote", tags=["Owner"])
+def demote_admin(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["owner"]))
+):
+    admin = db.query(User).filter_by(id=user_id, role="admin").first()
+    if not admin:
+        raise HTTPException(status_code=404, detail="Адміністратора не знайдено або він вже не є адміністратором")
+    if current_user.role != "owner":
+        raise HTTPException(status_code=403, detail="Тільки власник може понижувати адміністраторів")
+    admin.role = "user"
+    db.commit()
+    return {"message": "Адміністратор понижений до користувача"}
+
 
 Base.metadata.create_all(bind=engine)
 

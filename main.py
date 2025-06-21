@@ -18,6 +18,7 @@ import os
 from typing import List,Optional
 import json
 from enum import Enum
+import base64
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
@@ -174,6 +175,37 @@ class BlockUserRequest(BaseModel):
     isBlocked: bool
     blockReason: Optional[str] = None
 
+class VerificationRequest(Base):
+    __tablename__ = "verification_requests"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True)
+    images = Column(String)  
+    status = Column(String, default="pending")  
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+
+class VerificationRequestCreate(BaseModel):
+    images: List[str]  
+
+class VerificationResponse(BaseModel):
+    id: int
+    user_id: int
+    email: str
+    images: List[str]
+    status: str
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
+
+class VerificationStatus(str, Enum):
+    approved = "схвалити"
+    rejected = "відхилити"
+
+class VerificationUpdate(BaseModel):
+    status: VerificationStatus
+
 def get_db():
     db = SessionLocal()
     try:
@@ -329,6 +361,39 @@ def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)
         send_password_reset_email(user.email, token)
     
     return {"message": "Якщо такий email існує, на нього буде надіслано листа для зміни пароля"}
+
+@app.post("/verification/request", tags=["Verification"])
+async def request_verification(
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    allowed_types = {"image/jpeg", "image/png", "image/jpg", "image/webp"}
+
+    existing = db.query(VerificationRequest).filter_by(user_id=current_user.id).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Заявка вже подана")
+
+    base64_images = []
+    for file in files:
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=400,
+                detail="Можна завантажувати лише фото: JPG, JPEG, PNG, WEBP"
+            )
+        content = await file.read()
+        encoded = base64.b64encode(content).decode("utf-8")
+        base64_images.append(encoded)
+
+    new_request = VerificationRequest(
+        user_id=current_user.id,
+        images=json.dumps(base64_images),
+        status="pending"
+    )
+    db.add(new_request)
+    db.commit()
+
+    return {"detail": "Заявка на верифікацію подана"}
 
 @app.get("/posts/filter",tags=["Post"])
 def search_posts(
@@ -497,6 +562,27 @@ def get_all_admins(
         for admin in admins
     ]
 
+@app.get("/verification/requests", response_model=List[VerificationResponse], tags=["Admin"])
+def get_verification_requests(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role(["admin", "owner"]))
+):
+    requests = db.query(VerificationRequest).filter_by(status="pending").all()
+
+    if not requests:
+        raise HTTPException(status_code=404, detail="Заявок на верифікацію поки що немає")
+    
+    return [
+        VerificationResponse(
+            id=r.id,
+            user_id=r.user_id,
+            email=r.user.email,
+            images=json.loads(r.images),
+            status=r.status,
+            created_at=r.created_at
+        ) for r in requests
+    ]
+
 @app.post("/reset-password")
 def reset_password(token: str = Form(...), new_password: str = Form(...), db: Session = Depends(get_db)):
     try:
@@ -528,15 +614,26 @@ async def create_post(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if not current_user.isVerified:
+        raise HTTPException(status_code=403, detail="Тільки верифіковані користувачі можуть створювати оголошення")
+    
     import base64
+    import json
+
+    allowed_types = {"image/jpeg", "image/png", "image/jpg", "image/webp"}
     image_list = []
 
     for image in images:
+        if image.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=400,
+                detail="Можна завантажувати лише фото: JPG, JPEG, PNG, WEBP"
+            )
+
         contents = await image.read()
         encoded = base64.b64encode(contents).decode("utf-8")
         image_list.append(encoded)
-
-    import json
+        
     encoded_images = json.dumps(image_list)
 
     new_post = Post(
@@ -567,6 +664,11 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 
 @app.post("/categories",tags=["Admin"])
 def create_category(category: CategoryCreate, db: Session = Depends(get_db), _: User = Depends(require_role(["admin", "owner"]))):
+    
+    existing_category = db.query(Category).filter_by(name=category.name).first()
+    if existing_category:
+        raise HTTPException(status_code=400, detail="Категорія з такою назвою вже існує")
+
     new_cat = Category(name=category.name)
     db.add(new_cat)
     db.commit()
@@ -658,6 +760,28 @@ def update_category(cat_id: int, category: CategoryCreate, db: Session = Depends
     cat.name = category.name
     db.commit()
     return cat
+
+@app.put("/verification/requests/{request_id}", tags=["Admin"])
+def verify_user_request(
+    request_id: int,
+    status: VerificationStatus,  
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role(["admin", "owner"]))
+):
+    req = db.query(VerificationRequest).filter_by(id=request_id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Заявку не знайдено")
+
+    req.status = status.name  
+
+    if status == VerificationStatus.approved:
+        req.user.isVerified = True
+        message = "Заявку схвалено"
+    else:
+        message = "Заявку відхилено"
+
+    db.commit()
+    return {"detail": message}
 
 @app.delete("/posts/{post_id}",tags=["User"])
 def delete_post(post_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

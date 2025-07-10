@@ -78,6 +78,7 @@ class Post(Base):
     userId = Column(Integer, ForeignKey("users.id"))
     category_id = Column(Integer, ForeignKey("categories.id"))  
     user = relationship("User")
+    category = relationship("Category")
 
 class Category(Base):
     __tablename__ = "categories"
@@ -156,12 +157,21 @@ class PostResponse(BaseModel):
     createdAt: str
     is_scam: Optional[bool]
     userId: int
-    user: UserInfo
+    user: Optional[UserInfo] = None
     category_id: int
     category_name: Optional[str]
 
     class Config:
         orm_mode = True
+
+class FavoriteCategory(Base):
+    __tablename__ = "favorite_categories"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    category_id = Column(Integer, ForeignKey("categories.id"))
+
+    user = relationship("User")
+    category = relationship("Category")
 
 class CategoryCreate(BaseModel):
     name: str
@@ -183,6 +193,7 @@ class ComplaintCreate(BaseModel):
 class BlockUserRequest(BaseModel):
     isBlocked: bool
     blockReason: Optional[str] = None
+
 
 def get_db():
     db = SessionLocal()
@@ -281,6 +292,45 @@ def safe_load_images(images_str: str):
         return json.loads(images_str)
     except json.JSONDecodeError:
         return []
+
+def send_new_post_email(to: str, post: Post) -> None:
+    link = f"http://localhost:8000/posts/{post.id}"
+    first_image = json.loads(post.images)[0] if post.images else None
+
+    html_body = f"""
+    <html>
+      <body style="background-color:#f9f9f9; padding:30px; font-family:Arial, sans-serif;">
+        <div style="max-width:600px; margin:auto; background-color:#ffffff; padding:20px; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+          <h2 style="text-align:center; color:#333333;">🔔 Нова публікація для вас!</h2>
+          
+          {'<img src="data:image/jpeg;base64,' + first_image + '" style="max-width:100%; border-radius:8px; margin-bottom:15px;" />' if first_image else ''}
+
+          <h3 style="color:#007BFF; margin-bottom:5px;">{post.title}</h3>
+          <p style="color:#555555; font-size:15px; line-height:1.5;">{post.caption}</p>
+          <p style="font-size:16px; font-weight:bold; color:#000000;">Ціна: {post.price} грн</p>
+
+          <div style="text-align:center; margin-top:25px;">
+            <a href="{link}" style="background-color:#28a745; color:white; padding:12px 20px; border-radius:5px; text-decoration:none; font-size:16px;">Переглянути оголошення</a>
+          </div>
+
+          <hr style="margin-top:30px; border:none; border-top:1px solid #e0e0e0;" />
+          <p style="font-size:12px; color:#999999; text-align:center;">
+            Ви отримали це повідомлення, тому що підписані на нові оголошення в улюблених категоріях.
+          </p>
+        </div>
+      </body>
+    </html>
+    """
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Нове оголошення у вашій улюбленій категорії 📢"
+    msg["From"] = "Bulletin Board"
+    msg["To"] = to
+    msg.attach(MIMEText(html_body, "html"))
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(SMTP_USER, SMTP_PASS)
+        server.sendmail(SMTP_USER, to, msg.as_string())
 
 @app.post("/register", response_model=Token,tags=["User"])
 def register(user: UserCreate, db: Session = Depends(get_db)):
@@ -810,7 +860,103 @@ async def create_post(
     db.add(new_post)
     db.commit()
     db.refresh(new_post)
+    
+    fav_users = (
+    db.query(User)
+    .join(FavoriteCategory, FavoriteCategory.user_id == User.id)
+    .filter(FavoriteCategory.category_id == new_post.category_id)
+    .filter(User.isEmailConfirmed == True)
+    .all()
+    )
+
+    for user in fav_users:
+        send_new_post_email(user.email, new_post)
     return new_post
+
+@app.post("/categories/favorite/{category_id}", tags=["User"])
+def add_favorite_category(
+    category_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    exists = db.query(FavoriteCategory).filter_by(user_id=current_user.id, category_id=category_id).first()
+    if exists:
+        raise HTTPException(status_code=400, detail="The category is already in favorites")
+
+    fav = FavoriteCategory(user_id=current_user.id, category_id=category_id)
+    db.add(fav)
+    db.commit()
+    return {"message": "The category has been added to favorites"}
+
+@app.delete("/categories/favorite/{category_id}", tags=["User"])
+def remove_favorite_category(
+    category_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    favorite = db.query(FavoriteCategory).filter_by(
+        user_id=current_user.id,
+        category_id=category_id
+    ).first()
+
+    if not favorite:
+        raise HTTPException(status_code=404, detail="Category not found in favorites")
+
+    db.delete(favorite)
+    db.commit()
+    return {"message": "The category has been removed from favorites"}
+
+@app.get("/categories/favorite", tags=["User"])
+def get_favorite_categories(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    favorites = (
+        db.query(Category)
+        .join(FavoriteCategory, FavoriteCategory.category_id == Category.id)
+        .filter(FavoriteCategory.user_id == current_user.id)
+        .all()
+    )
+
+    return [{"id": cat.id, "name": cat.name} for cat in favorites]
+
+@app.get("/my/posts", response_model=List[PostResponse], tags=["Post"])
+def get_my_posts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    posts = (
+        db.query(Post)
+        .filter(Post.userId == current_user.id)
+        .order_by(Post.createdAt.desc())
+        .all()
+    )
+
+    if not posts:
+        raise HTTPException(status_code=404, detail="У вас нет объявлений")
+
+    result = []
+    for post in posts:
+        category = db.query(Category).filter(Category.id == post.category_id).first()
+
+        result.append(PostResponse(
+            id=post.id,
+            title=post.title,
+            caption=post.caption,
+            price=post.price,
+            images=safe_load_images(post.images),
+            tags=post.tags,
+            views=post.views,
+            isPromoted=post.isPromoted,
+            createdAt=post.createdAt.isoformat(),
+            is_scam=post.is_scam,
+            userId=post.userId,
+            # user поле убрали
+            category_id=post.category_id,
+            category_name=category.name if category else None
+        ))
+
+    return result
 
 @app.post("/login", response_model=Token, tags=["User"])
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):

@@ -130,7 +130,7 @@ class PostCreate(BaseModel):
     caption: str
     price: int
     images: str = ""
-    tags: str = ""
+    tags: List[str]
     category_id: int
 
 class UserInfo(BaseModel):
@@ -151,7 +151,7 @@ class PostResponse(BaseModel):
     caption: str
     price: int
     images: List[str]
-    tags: Optional[str]
+    tags: List[str]
     views: int
     isPromoted: bool
     createdAt: str
@@ -182,8 +182,8 @@ class UpdateProfile(BaseModel):
     phone: str
 
 class ScamStatus(str, Enum):
-    scam = "шахрай"
-    not_scam = "не шахрай"
+    scam = "swindler"
+    not_scam = "no swindler"
 
 class ComplaintCreate(BaseModel):
     post_id: Optional[int] = None
@@ -220,18 +220,75 @@ def create_access_token(user: User, expires_delta: timedelta = None):
 
 def send_verification_email(email: str, token: str):
     link = f"http://localhost:8000/verify-email?token={token}"
+
     html_body = f"""
-    <html>
-      <body>
-        <p>Щоб підтвердити свій email, натисніть кнопку нижче:</p>
-        <a href="{link}" style="display: inline-block; padding: 10px 20px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;">Підтвердити Email</a>
-        <p>Якщо кнопка не працює, відкрийте це посилання:<br>{link}</p>
-      </body>
+    <!DOCTYPE html>
+    <html lang="uk">
+    <head>
+        <meta charset="UTF-8">
+        <title>Confirmation email</title>
+        <style>
+            body {{
+                background-color: #f4f4f4;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                margin: 0;
+                padding: 0;
+            }}
+            .container {{
+                max-width: 600px;
+                margin: 40px auto;
+                background-color: #ffffff;
+                border-radius: 10px;
+                padding: 30px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+                text-align: center;
+            }}
+            h2 {{
+                color: #333333;
+                margin-bottom: 20px;
+            }}
+            p {{
+                color: #555555;
+                line-height: 1.6;
+            }}
+            .button {{
+                display: inline-block;
+                padding: 12px 24px;
+                background-color: #4CAF50;
+                color: white;
+                text-decoration: none;
+                border-radius: 6px;
+                font-weight: bold;
+                margin-top: 20px;
+            }}
+            .footer {{
+                font-size: 13px;
+                color: #888888;
+                margin-top: 30px;
+            }}
+            .link-fallback {{
+                color: #4a90e2;
+                text-decoration: none;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h2>Confirmation email</h2>
+            <p>Thank you for registering in the service <strong>Bulletin Board</strong>.</p>
+            <p>Click the button below to activate your account:</p>
+            <a href="{link}" class="button">Confirm Email</a>
+            <p>Or <a href="{link}" class="link-fallback">click here</a>, if the button does not work.</p>
+            <div class="footer">
+                If you have not registered with us, simply ignore this email.
+            </div>
+        </div>
+    </body>
     </html>
     """
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = "Підтвердження email"
+    msg["Subject"] = "🔔 Confirmation Email"
     msg["From"] = "Bulletin Board"
     msg["To"] = email
     msg.attach(MIMEText(html_body, "html"))
@@ -239,21 +296,78 @@ def send_verification_email(email: str, token: str):
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(SMTP_USER, SMTP_PASS)
         server.sendmail(SMTP_USER, email, msg.as_string())
+
 
 def send_password_reset_email(email: str, token: str):
     link = f"http://localhost:8000/reset-password-form?token={token}"
+    
     html_body = f"""
-    <html>
-      <body>
-        <p>Щоб скинути пароль, натисніть кнопку нижче:</p>
-        <a href="{link}" style="display: inline-block; padding: 10px 20px; background-color: #f44336; color: white; text-decoration: none; border-radius: 5px;">Скинути пароль</a>
-        <p>Якщо кнопка не працює, відкрийте це посилання:<br>{link}</p>
-      </body>
+    <!DOCTYPE html>
+    <html lang="uk">
+    <head>
+      <meta charset="UTF-8" />
+      <title>Password reset</title>
+      <style>
+        body {{
+          background-color: #f4f4f4;
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          margin: 0;
+          padding: 0;
+        }}
+        .email-container {{
+          max-width: 600px;
+          margin: 40px auto;
+          background-color: #ffffff;
+          border-radius: 10px;
+          padding: 30px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }}
+        h2 {{
+          color: #333333;
+          margin-bottom: 20px;
+        }}
+        p {{
+          color: #555555;
+          line-height: 1.6;
+        }}
+        .button {{
+          display: inline-block;
+          padding: 12px 24px;
+          background-color: #f44336;
+          color: white;
+          text-decoration: none;
+          border-radius: 6px;
+          font-weight: bold;
+          margin-top: 20px;
+        }}
+        .footer {{
+          font-size: 13px;
+          color: #888888;
+          margin-top: 30px;
+        }}
+        .link-fallback {{
+          word-break: break-word;
+          color: #4a90e2;
+        }}
+      </style>
+    </head>
+    <body>
+      <div class="email-container">
+        <h2>Password reset</h2>
+        <p>You received this email because you are trying to reset your account password.</p>
+        <p>To set a new password, click the button below:</p>
+        <a href="{link}" class="button">Reset password</a>
+        <p>Or <a href="{link}" class="link-fallback">click here</a>, if the button does not work.</p>
+        <div class="footer">
+          If you have not sent a password change request, simply ignore this email.
+        </div>
+      </div>
+    </body>
     </html>
     """
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = "Зміна пароля"
+    msg["Subject"] = "🔐 Password reset"
     msg["From"] = "Bulletin Board"
     msg["To"] = email
     msg.attach(MIMEText(html_body, "html"))
@@ -261,6 +375,7 @@ def send_password_reset_email(email: str, token: str):
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(SMTP_USER, SMTP_PASS)
         server.sendmail(SMTP_USER, email, msg.as_string())
+
 
 def get_current_user(
     token: str = Depends(oauth2_scheme),
@@ -301,7 +416,7 @@ def send_new_post_email(to: str, post: Post) -> None:
     <html>
       <body style="background-color:#f9f9f9; padding:30px; font-family:Arial, sans-serif;">
         <div style="max-width:600px; margin:auto; background-color:#ffffff; padding:20px; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
-          <h2 style="text-align:center; color:#333333;">🔔 Нова публікація для вас!</h2>
+          <h2 style="text-align:center; color:#333333;">🔔 New post for you!</h2>
           
           {'<img src="data:image/jpeg;base64,' + first_image + '" style="max-width:100%; border-radius:8px; margin-bottom:15px;" />' if first_image else ''}
 
@@ -310,12 +425,12 @@ def send_new_post_email(to: str, post: Post) -> None:
           <p style="font-size:16px; font-weight:bold; color:#000000;">Ціна: {post.price} грн</p>
 
           <div style="text-align:center; margin-top:25px;">
-            <a href="{link}" style="background-color:#28a745; color:white; padding:12px 20px; border-radius:5px; text-decoration:none; font-size:16px;">Переглянути оголошення</a>
+            <a href="{link}" style="background-color:#28a745; color:white; padding:12px 20px; border-radius:5px; text-decoration:none; font-size:16px;">View the post</a>
           </div>
 
           <hr style="margin-top:30px; border:none; border-top:1px solid #e0e0e0;" />
           <p style="font-size:12px; color:#999999; text-align:center;">
-            Ви отримали це повідомлення, тому що підписані на нові оголошення в улюблених категоріях.
+            You received this message because you are subscribed to new ads in your favorite categories.
           </p>
         </div>
       </body>
@@ -323,7 +438,7 @@ def send_new_post_email(to: str, post: Post) -> None:
     """
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = "Нове оголошення у вашій улюбленій категорії 📢"
+    msg["Subject"] = "New ad in your favorite category 📢"
     msg["From"] = "Bulletin Board"
     msg["To"] = to
     msg.attach(MIMEText(html_body, "html"))
@@ -331,6 +446,14 @@ def send_new_post_email(to: str, post: Post) -> None:
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(SMTP_USER, SMTP_PASS)
         server.sendmail(SMTP_USER, to, msg.as_string())
+
+def safe_load_tags(tags_str: str):
+    if not tags_str:
+        return []
+    try:
+        return json.loads(tags_str)
+    except json.JSONDecodeError:
+        return [t.strip() for t in tags_str.split(",") if t.strip()]
 
 @app.post("/register", response_model=Token,tags=["User"])
 def register(user: UserCreate, db: Session = Depends(get_db)):
@@ -346,7 +469,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_user)
 
-    token = create_access_token({"sub": db_user.email})
+    token = create_access_token(db_user)
     send_verification_email(db_user.email, token)
 
     return {"access_token": token, "token_type": "bearer"}
@@ -389,12 +512,12 @@ def make_user_admin(
 def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter_by(email=request.email).first()
     if user:
-        token = create_access_token({"sub": user.email}, expires_delta=timedelta(hours=1))
+        token = create_access_token(user, expires_delta=timedelta(hours=1))
         send_password_reset_email(user.email, token)
     
     return {"message": "If such an email exists, an email to change the password will be sent to it"}
 
-@app.get("/posts/filter",tags=["Post"])
+@app.get("/posts/filter", tags=["Post"])
 def search_posts(
     title: Optional[str] = None,
     min_price: Optional[int] = None,
@@ -429,6 +552,7 @@ def search_posts(
 
     for post in results:
         post.images = safe_load_images(post.images)
+        post.tags = safe_load_tags(post.tags)  
 
     return results
 
@@ -449,9 +573,13 @@ def get_blocked_users(db: Session = Depends(get_db), _: User = Depends(require_r
         })
     return result
 
-@app.get("/posts",tags=["Post"])
+@app.get("/posts", tags=["Post"])
 def get_posts(db: Session = Depends(get_db)):
-    return db.query(Post).all()
+    posts = db.query(Post).order_by(Post.createdAt.desc()).all()
+    for post in posts:
+        post.images = safe_load_images(post.images)
+        post.tags = safe_load_tags(post.tags)
+    return posts
 
 @app.get("/posts/{post_id}", response_model=PostResponse, tags=["Post"])
 def get_post(post_id: int, db: Session = Depends(get_db)):
@@ -472,6 +600,8 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
 
     post.images = safe_load_images(post.images)
 
+    post_tags = safe_load_tags(post.tags)
+
     user_info = UserInfo(
         id=user.id,
         name=user.name,
@@ -488,7 +618,7 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
         caption=post.caption,
         price=post.price,
         images=post.images,
-        tags=post.tags,
+        tags=post_tags,
         views=post.views,
         isPromoted=post.isPromoted,
         createdAt=post.createdAt.isoformat(),
@@ -501,20 +631,64 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
 
 @app.get("/reset-password-form", response_class=HTMLResponse)
 def reset_password_form(token: str):
-    html_content = f"""
+    return HTMLResponse(content=f"""
+    <!DOCTYPE html>
     <html>
-      <body>
-        <h2>Скинути пароль</h2>
-        <form action="/reset-password" method="post">
-          <input type="hidden" name="token" value="{token}" />
-          <label>Новий пароль:</label><br>
-          <input type="password" name="new_password" required/><br><br>
-          <button type="submit">Скинути пароль</button>
-        </form>
-      </body>
+    <head>
+        <title>Скидання пароля</title>
+        <meta charset="utf-8" />
+        <style>
+            body {{
+                background-color: #f2f2f2;
+                font-family: Arial, sans-serif;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+            }}
+            .container {{
+                background-color: #fff;
+                padding: 30px;
+                border-radius: 12px;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+                width: 100%;
+                max-width: 400px;
+            }}
+            input {{
+                width: 100%;
+                padding: 10px;
+                margin: 10px 0;
+                border: 1px solid #ccc;
+                border-radius: 8px;
+            }}
+            button {{
+                width: 100%;
+                padding: 10px;
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 16px;
+            }}
+            button:hover {{
+                background-color: #45a049;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h2>Скидання пароля</h2>
+            <form method="post" action="/reset-password">
+                <input type="hidden" name="token" value="{token}">
+                <label for="new_password">Новий пароль:</label>
+                <input type="password" name="new_password" required>
+                <button type="submit">Підтвердити</button>
+            </form>
+        </div>
+    </body>
     </html>
-    """
-    return html_content
+    """)
 
 @app.get("/verify-email")
 def verify_email(token: str, db: Session = Depends(get_db)):
@@ -617,16 +791,29 @@ def get_my_chats(
     ).all()
 
     result = []
+
     for dialogue in dialogues:
         if dialogue.user_from == current_user.id:
             other_user = db.query(User).filter(User.id == dialogue.user_to).first()
         else:
             other_user = db.query(User).filter(User.id == dialogue.user_from).first()
+
         if not other_user:
             continue
 
-        last_message = db.query(Message).filter(Message.dialogue_id == dialogue.id).order_by(desc(Message.timestamp)).first()
+        last_message = (
+            db.query(Message)
+            .filter(Message.dialogue_id == dialogue.id)
+            .order_by(desc(Message.timestamp))
+            .first()
+        )
+
         post = db.query(Post).filter(Post.id == dialogue.post_id).first()
+
+        post_response = PostShortResponse(
+            id=post.id if post else -1,
+            title=post.title if post else "Deleted post"
+        )
 
         result.append(DialogueSummaryResponse(
             id=dialogue.id,
@@ -634,16 +821,12 @@ def get_my_chats(
                 id=other_user.id,
                 nickname=f"{other_user.name} {other_user.surname}"
             ),
-            post=PostShortResponse(
-                id=post.id if post else None,
-                title=post.title if post else "The post has been removed"
-            ),
+            post=post_response,
             last_message=last_message.message if last_message else None,
             last_message_time=last_message.timestamp if last_message else None
         ))
 
     return result
-
 
 @app.get("/chat/with/{other_user_id}", response_model=DialogueDetailResponse, tags=["User"])
 def get_conversation(
@@ -796,7 +979,11 @@ def get_all_admins(
     ]
 
 @app.post("/reset-password")
-def reset_password(token: str = Form(...), new_password: str = Form(...), db: Session = Depends(get_db)):
+def reset_password(
+    token: str = Form(...),
+    new_password: str = Form(...),
+    db: Session = Depends(get_db)
+):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email = payload.get("sub")
@@ -806,11 +993,55 @@ def reset_password(token: str = Form(...), new_password: str = Form(...), db: Se
 
         user.password = hash_password(new_password)
         db.commit()
+
         return HTMLResponse("""
-            <html><body>
-            <h3>Пароль успішно змінено!</h3>
-            <a href="/login-form">Увійти</a>
-            </body></html>
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Успішна зміна пароля</title>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    background-color: #f0f2f5;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    height: 100vh;
+                }
+                .box {
+                    background-color: white;
+                    padding: 40px;
+                    border-radius: 12px;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                    text-align: center;
+                }
+                h3 {
+                    color: #333;
+                    margin-bottom: 20px;
+                }
+                a.button {
+                    display: inline-block;
+                    padding: 10px 20px;
+                    background-color: #4CAF50;
+                    color: white;
+                    border-radius: 8px;
+                    text-decoration: none;
+                    font-weight: bold;
+                    transition: background-color 0.3s ease;
+                }
+                a.button:hover {
+                    background-color: #45a049;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="box">
+                <h3>Пароль успішно змінено!</h3>
+                <a href="/docs" class="button">Увійти</a>
+            </div>
+        </body>
+        </html>
         """)
     except JWTError:
         raise HTTPException(status_code=400, detail="Invalid or expired token")
@@ -847,12 +1078,15 @@ async def create_post(
         image_list.append(encoded)
         
     encoded_images = json.dumps(image_list)
+    
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+    encoded_tags = json.dumps(tag_list)
 
     new_post = Post(
         title=title,
         caption=caption,
         price=price,
-        tags=tags,
+        tags=encoded_tags,
         category_id=category_id,
         images=encoded_images,
         userId=current_user.id
@@ -871,7 +1105,10 @@ async def create_post(
 
     for user in fav_users:
         send_new_post_email(user.email, new_post)
+    new_post.tags = safe_load_tags(new_post.tags)
+    new_post.images = safe_load_images(new_post.images)
     return new_post
+
 
 @app.post("/categories/favorite/{category_id}", tags=["User"])
 def add_favorite_category(
@@ -933,7 +1170,7 @@ def get_my_posts(
     )
 
     if not posts:
-        raise HTTPException(status_code=404, detail="У вас нет объявлений")
+        raise HTTPException(status_code=404, detail="You don't have any posts")
 
     result = []
     for post in posts:
@@ -945,13 +1182,12 @@ def get_my_posts(
             caption=post.caption,
             price=post.price,
             images=safe_load_images(post.images),
-            tags=post.tags,
+            tags=safe_load_tags(post.tags),
             views=post.views,
             isPromoted=post.isPromoted,
             createdAt=post.createdAt.isoformat(),
             is_scam=post.is_scam,
             userId=post.userId,
-            # user поле убрали
             category_id=post.category_id,
             category_name=category.name if category else None
         ))

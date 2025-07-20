@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Request, Body, Header,Form,UploadFile, File, Query
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, constr, conint, Field
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey, or_, desc, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import HTMLResponse
 import os
-from typing import List,Optional
+from typing import List,Optional, Annotated
 import json
 from enum import Enum
 import base64
@@ -104,11 +104,11 @@ class Complaint(Base):
     post = relationship("Post")
 
 class UserCreate(BaseModel):
-    name: str
-    surname: str
-    phone: str
+    name: Annotated[str, Field(min_length=1, max_length=50)]
+    surname: Annotated[str, Field(min_length=1, max_length=50)]
+    phone: Annotated[str, Field(min_length=9, max_length=15, pattern=r'^[\d\-\+\(\) ]+$', example="+380671234567")]
     email: EmailStr
-    password: str
+    password: Annotated[str, Field(min_length=8)]
 
 class Token(BaseModel):
     access_token: str
@@ -177,9 +177,9 @@ class CategoryCreate(BaseModel):
     name: str
 
 class UpdateProfile(BaseModel):
-    name: str
-    surname: str
-    phone: str
+    name: Annotated[str, Field(min_length=1, max_length=50)]
+    surname: Annotated[str, Field(min_length=1, max_length=50)]
+    phone: Annotated[str, Field(min_length=9, max_length=15, pattern=r'^[\d\-\+\(\) ]+$', example="+380671234567")]
 
 class ScamStatus(str, Enum):
     scam = "swindler"
@@ -205,8 +205,12 @@ def get_db():
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+def verify_password(password: str, hashed_password: str = None) -> bool:
+    if hashed_password:
+        return pwd_context.verify(password, hashed_password)
+    else:
+        return len(password) >= 8 and any(c.isupper() for c in password) and any(c.isdigit() for c in password)
+
 
 def create_access_token(user: User, expires_delta: timedelta = None):
     expire = datetime.utcnow() + (expires_delta or timedelta(days=1))
@@ -459,7 +463,15 @@ def safe_load_tags(tags_str: str):
 def register(user: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter_by(email=user.email).first():
         raise HTTPException(status_code=400, detail="Email is already registered!")
-
+    if not verify_password(user.password):
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    if not (1 <= len(user.name) <= 50):
+        raise HTTPException(status_code=400, detail="Name must be between 1 and 50 characters.")
+    if not (1 <= len(user.surname) <= 50):
+        raise HTTPException(status_code=400, detail="Surname must be between 1 and 50 characters.")
+    if not (9 <= len(user.phone) <= 15):
+        raise HTTPException(status_code=400, detail="Phone number must be between 9 and 15 characters.")
+    
     hashed_pw = hash_password(user.password)
     user_data = user.dict()
     user_data.pop("password")  
@@ -678,12 +690,12 @@ def reset_password_form(token: str):
     </head>
     <body>
         <div class="container">
-            <h2>Скидання пароля</h2>
+            <h2>Password reset</h2>
             <form method="post" action="/reset-password">
                 <input type="hidden" name="token" value="{token}">
-                <label for="new_password">Новий пароль:</label>
+                <label for="new_password">New password:</label>
                 <input type="password" name="new_password" required>
-                <button type="submit">Підтвердити</button>
+                <button type="submit">Confirm</button>
             </form>
         </div>
     </body>
@@ -981,7 +993,7 @@ def get_all_admins(
 @app.post("/reset-password")
 def reset_password(
     token: str = Form(...),
-    new_password: str = Form(...),
+    new_password: Annotated[str, Field(min_length=8)] = Form(...),
     db: Session = Depends(get_db)
 ):
     try:
@@ -1048,8 +1060,8 @@ def reset_password(
 
 @app.post("/posts",tags=["Post"])
 async def create_post(
-    title: str = Form(...),
-    caption: str = Form(...),
+    title: str = Form(...,max_length=100),
+    caption: str = Form(...,max_length=1000),
     price: int = Form(...),
     tags: str = Form(""),
     category_id: int = Form(...),
@@ -1059,6 +1071,9 @@ async def create_post(
 ):
     if not current_user.isVerified:
         raise HTTPException(status_code=403, detail="Only verified users can create posts")
+    
+    if price < 0:
+        raise HTTPException(status_code=400, detail="Price cannot be less than 0")
     
     import base64
     import json

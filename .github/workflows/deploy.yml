@@ -1,44 +1,37 @@
-name: Deploy FastAPI to VPS
+name: Deploy
 
 on:
   push:
-    branches: [ main ]
-
+    branches:
+      - main
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Environment name (optional)'
-        required: false
-        default: 'production'
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      - name: Set up SSH
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+    - name: Set up SSH
+      uses: webfactory/ssh-agent@v0.9.0
+      with:
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: Add beez.pp.ua to known_hosts
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan beez.pp.ua >> ~/.ssh/known_hosts
+    - name: Add host to known_hosts
+      run: |
+        mkdir -p ~/.ssh
+        ssh-keyscan beez.pp.ua >> ~/.ssh/known_hosts
 
-      - name: Copy files
-        run: |
-          rsync -avz --delete \
-            --exclude certbot/conf \
-            ./ azureuser@beez.pp.ua:/home/azureuser/Back
+    - name: Sync files to VPS
+      run: |
+        rsync -avz --delete ./ azureuser@beez.pp.ua:/home/azureuser/Back
 
-      - name: Rebuild and restart docker-compose
-        run: |
-          ssh azureuser@beez.pp.ua <<'EOF'
-            cd /home/azureuser/Back
-            docker compose down
-            docker compose up -d --build
-          EOF
+    - name: Restart Docker Compose on VPS
+      run: |
+        ssh azureuser@beez.pp.ua << 'EOF'
+          cd /home/azureuser/Back
+          docker compose down
+          docker compose up -d --build
+        EOF

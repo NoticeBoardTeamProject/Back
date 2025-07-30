@@ -39,10 +39,13 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],           
-    allow_credentials=True,        
-    allow_methods=["*"],           
-    allow_headers=["*"],           
+    allow_origins=[
+        "http://localhost:5173", 
+        "https://noticeboardteamproject.github.io"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 class User(Base):
@@ -1460,7 +1463,7 @@ def demote_admin(
 
 Base.metadata.create_all(bind=engine)
 
-def create_default_owner():
+def create_default_owner_and_categories():
     db = SessionLocal()
     try:
         user_count = db.query(User).count()
@@ -1478,10 +1481,10 @@ def create_default_owner():
             db.add(owner)
             
             admin = User(
-                name="Test",
-                surname="Admin",
+                name="Daniil",
+                surname="Shtyvola",
                 phone="+3802546848",
-                email="test_admin124@gmail.com",
+                email="danyashtyvola@gmail.com",
                 password=hash_password("123456789"),
                 role="Admin",
                 isVerified=True,
@@ -1490,10 +1493,10 @@ def create_default_owner():
             db.add(admin)
 
             user1 = User(
-                name="Daniil",
-                surname="Shtyvola",
+                name="Patrick",
+                surname="Star",
                 phone="+3802347234794",
-                email="danyashtyvola@gmail.com",
+                email="patrick_star2352@gmail.com",
                 password=hash_password("123456789"),
                 role="User",
                 isVerified=True,
@@ -1514,10 +1517,10 @@ def create_default_owner():
             db.add(user2)
 
             user3 = User(
-                name="Tralalero",
-                surname="Tralala",
+                name="Asuka",
+                surname="Langley",
                 phone="+38047234717",
-                email="akula_tralala2135@gmail.com",
+                email="asuka_langley2135@gmail.com",
                 password=hash_password("123456789"),
                 role="User",
                 isEmailConfirmed=True
@@ -1535,8 +1538,15 @@ def create_default_owner():
             )
             db.add(user4)
 
-            db.commit()
+        categories = ["Toys", "Electronics", "Clothes", "Furniture"]
+        for cat_name in categories:
+            exists = db.query(Category).filter_by(name=cat_name).first()
+            if not exists:
+                new_cat = Category(name=cat_name)
+                db.add(new_cat)
+
+        db.commit()
     finally:
         db.close()
 
-create_default_owner()
+create_default_owner_and_categories()

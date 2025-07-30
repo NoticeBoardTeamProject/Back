@@ -18,22 +18,10 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf
-      - ./certbot/www:/var/www/certbot
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
       - ./certbot/conf:/etc/letsencrypt
     networks:
       - web
-
-  certbot:
-    image: certbot/certbot
-    container_name: certbot
-    volumes:
-      - ./certbot/www:/var/www/certbot
-      - ./certbot/conf:/etc/letsencrypt
-    entrypoint: >
-      sh -c "certbot certonly --webroot --webroot-path=/var/www/certbot
-             --email your@email.com --agree-tos --no-eff-email
-             -d beez.pp.ua -d www.beez.pp.ua"
 
 networks:
   web:

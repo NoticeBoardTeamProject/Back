@@ -31,7 +31,9 @@ jobs:
 
       - name: Copy files
         run: |
-          rsync -avz --delete ./ azureuser@beez.pp.ua:/home/azureuser/Back
+          rsync -avz --delete \
+            --exclude certbot/conf \
+            ./ azureuser@beez.pp.ua:/home/azureuser/Back
 
       - name: Rebuild and restart docker-compose
         run: |

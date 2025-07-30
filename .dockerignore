@@ -1,0 +1,4 @@
+certbot/conf
+certbot/www
+.git
+.github

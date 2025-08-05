@@ -183,6 +183,7 @@ class UpdateProfile(BaseModel):
     name: Annotated[str, Field(min_length=1, max_length=50)]
     surname: Annotated[str, Field(min_length=1, max_length=50)]
     phone: Annotated[str, Field(min_length=9, max_length=15, pattern=r'^[\d\-\+\(\) ]+$', example="+380671234567")]
+    avatarBase64: Optional[str] = None
 
 class ScamStatus(str, Enum):
     scam = "swindler"
@@ -727,7 +728,9 @@ def read_users_me(current_user: User = Depends(get_current_user)):
         "surname": current_user.surname,
         "email": current_user.email,
         "phone": current_user.phone,
+        "isVerified": current_user.isVerified,
         "isEmailConfirmed": current_user.isEmailConfirmed,
+        "avatarBase64": current_user.avatarBase64,
         "role": current_user.role,
         "createdAt": current_user.createdAt
     }
@@ -763,6 +766,7 @@ class Message(Base):
 class UserShortResponse(BaseModel):
     id: int
     nickname: str
+    avatarBase64: Optional[str] = None
 
 class PostShortResponse(BaseModel):
     id: int
@@ -834,7 +838,8 @@ def get_my_chats(
             id=dialogue.id,
             other_user=UserShortResponse(
                 id=other_user.id,
-                nickname=f"{other_user.name} {other_user.surname}"
+                nickname=f"{other_user.name} {other_user.surname}",
+                avatarBase64=other_user.avatarBase64
             ),
             post=post_response,
             last_message=last_message.message if last_message else None,
@@ -1287,11 +1292,19 @@ def block_user(
     db.commit()
     return {"message": f"User {'blocked' if data.isBlocked else 'unlocked'}"}
 
-@app.put("/update-profile",tags=["User"])
-def update_profile(data: UpdateProfile, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@app.put("/update-profile", tags=["User"])
+def update_profile(
+    data: UpdateProfile,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     current_user.name = data.name
     current_user.surname = data.surname
     current_user.phone = data.phone
+
+    if data.avatarBase64 is not None:
+        current_user.avatarBase64 = data.avatarBase64
+
     db.commit()
     db.refresh(current_user)
     return {"message": "Profile updated successfully"}

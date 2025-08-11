@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, Request, Body, Head
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, constr, conint, Field
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey, or_, desc, Text
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey, or_, desc, Text, Enum as SQLEnum, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
 from jose import JWTError, jwt
@@ -17,23 +17,32 @@ from fastapi.responses import HTMLResponse
 import os
 from typing import List,Optional, Annotated
 import json
-from enum import Enum
+from enum import Enum, IntEnum
 import base64
+from config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, SMTP_USER, SMTP_PASS
+from database import get_db, Base, engine
+from database import Base, engine, get_db
+from utils import create_default_owner_and_categories
+from models import (
+    User, Post, Category, Review, Dialogue, Message, Complaint,
+    FavoriteCategory, VerificationRequest
+)
+from schemas import (
+    Token, UserCreate, ComplaintCreate, CategoryCreate, PostResponse, PostShortResponse,
+    ReviewResponse, DialogueSummaryResponse, DialogueDetailResponse, UserShortResponse,
+    MessageResponse, SendMessageRequest, SendMessageResponse, ComplaintResponse, UserInfo,
+    BlockUserRequest, UpdateProfile,PasswordResetRequest, VerificationResponse, VerificationUpdate,
+    CloseReason, RatingEnum, CurrencyEnum, CityEnum, ScamStatus, VerificationStatus
+)
+from utils import (
+    hash_password, verify_password, create_access_token, get_current_user,
+    require_role, safe_load_images, safe_load_tags,
+    send_verification_email, send_password_reset_email, send_new_post_email
+)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-DATABASE_URL = "sqlite:///./bulletin_board.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
 app = FastAPI()
-
-SECRET_KEY = "supersecretkey"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
-SMTP_USER = "bodyaraz7@gmail.com"
-SMTP_PASS = "hqmmpdzlupuyvijl"
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -48,425 +57,168 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class User(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String)
-    surname = Column(String)
-    phone = Column(String)
-    email = Column(String, unique=True)
-    password = Column(String)
-    isEmailConfirmed = Column(Boolean, default=False)
-    isVerified = Column(Boolean, default=False)
-    isBlocked = Column(Boolean, default=False)
-    blockReason = Column(String, nullable=True)
-    blockedAt = Column(DateTime, nullable=True)
-    role = Column(String, default="User")
-    socialLinks = Column(String)
-    avatarBase64 = Column(String)
-    createdAt = Column(DateTime, default=datetime.utcnow)
-
-class Post(Base):
-    __tablename__ = "posts"
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String)
-    caption = Column(String)
-    price = Column(Integer)
-    images = Column(String)
-    tags = Column(String)
-    views = Column(Integer, default=0)
-    isPromoted = Column(Boolean, default=False)
-    createdAt = Column(DateTime, default=datetime.utcnow)
-    is_scam: bool = Column(Boolean, default=None, nullable=True)
-    userId = Column(Integer, ForeignKey("users.id"))
-    category_id = Column(Integer, ForeignKey("categories.id"))  
-    user = relationship("User")
-    category = relationship("Category")
-
-class Category(Base):
-    __tablename__ = "categories"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String)   
-
-class Admin(Base):
-    __tablename__ = "admins"
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    can_block_users = Column(Boolean, default=True)
-    can_verify_posts = Column(Boolean, default=True)
-
-class Complaint(Base):
-    __tablename__ = "complaints"
-    id = Column(Integer, primary_key=True, index=True)
-    post_id = Column(Integer, ForeignKey("posts.id"), nullable=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    message = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    user = relationship("User")
-    post = relationship("Post")
-
-class UserCreate(BaseModel):
-    name: Annotated[str, Field(min_length=1, max_length=50)]
-    surname: Annotated[str, Field(min_length=1, max_length=50)]
-    phone: Annotated[str, Field(min_length=9, max_length=15, pattern=r'^[\d\-\+\(\) ]+$', example="+380671234567")]
-    email: EmailStr
-    password: Annotated[str, Field(min_length=8)]
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-class LoginForm(BaseModel):
-    email: EmailStr
-    password: str
-
-class PasswordResetRequest(BaseModel):
-    email: EmailStr
-
-class PasswordReset(BaseModel):
-    token: str
-    new_password: str
-
-class PostCreate(BaseModel):
-    title: str
-    caption: str
-    price: int
-    images: str = ""
-    tags: List[str]
-    category_id: int
-
-class UserInfo(BaseModel):
-    id: int
-    name: str
-    surname: str
-    phone: Optional[str]
-    email: str
-    avatarBase64: Optional[str]
-    createdAt: str
-
-    class Config:
-        orm_mode = True
-
-class PostResponse(BaseModel):
-    id: int
-    title: str
-    caption: str
-    price: int
-    images: List[str]
-    tags: List[str]
-    views: int
-    isPromoted: bool
-    createdAt: str
-    is_scam: Optional[bool]
-    userId: int
-    user: Optional[UserInfo] = None
-    category_id: int
-    category_name: Optional[str]
-
-    class Config:
-        orm_mode = True
-
-class FavoriteCategory(Base):
-    __tablename__ = "favorite_categories"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    category_id = Column(Integer, ForeignKey("categories.id"))
-
-    user = relationship("User")
-    category = relationship("Category")
-
-class CategoryCreate(BaseModel):
-    name: str
-
-class UpdateProfile(BaseModel):
-    name: Annotated[str, Field(min_length=1, max_length=50)]
-    surname: Annotated[str, Field(min_length=1, max_length=50)]
-    phone: Annotated[str, Field(min_length=9, max_length=15, pattern=r'^[\d\-\+\(\) ]+$', example="+380671234567")]
-
-class ScamStatus(str, Enum):
-    scam = "swindler"
-    not_scam = "no swindler"
-
-class ComplaintCreate(BaseModel):
-    post_id: Optional[int] = None
-    user_id: Optional[int] = None
-    message: str
-
-class BlockUserRequest(BaseModel):
-    isBlocked: bool
-    blockReason: Optional[str] = None
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
-
-def verify_password(password: str, hashed_password: str = None) -> bool:
-    if hashed_password:
-        return pwd_context.verify(password, hashed_password)
-    else:
-        return len(password) >= 8 and any(c.isupper() for c in password) and any(c.isdigit() for c in password)
-
-
-def create_access_token(user: User, expires_delta: timedelta = None):
-    expire = datetime.utcnow() + (expires_delta or timedelta(days=1))
-    to_encode = {
-        "sub": user.email,
-        "isVerified": user.isVerified,
-        "role": user.role,
-        "exp": expire
+@app.get("/me",tags=["User"])
+def read_users_me(current_user: User = Depends(get_current_user)):
+    return {
+        "id": current_user.id,
+        "name": current_user.name,
+        "surname": current_user.surname,
+        "email": current_user.email,
+        "phone": current_user.phone,
+        "isVerified": current_user.isVerified,
+        "isEmailConfirmed": current_user.isEmailConfirmed,
+        "avatarBase64": current_user.avatarBase64,
+        "role": current_user.role,
+        "createdAt": current_user.createdAt
     }
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-def send_verification_email(email: str, token: str):
-    link = f"http://localhost:8000/verify-email?token={token}"
-
-    html_body = f"""
-    <!DOCTYPE html>
-    <html lang="uk">
-    <head>
-        <meta charset="UTF-8">
-        <title>Confirmation email</title>
-        <style>
-            body {{
-                background-color: #f4f4f4;
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                margin: 0;
-                padding: 0;
-            }}
-            .container {{
-                max-width: 600px;
-                margin: 40px auto;
-                background-color: #ffffff;
-                border-radius: 10px;
-                padding: 30px;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-                text-align: center;
-            }}
-            h2 {{
-                color: #333333;
-                margin-bottom: 20px;
-            }}
-            p {{
-                color: #555555;
-                line-height: 1.6;
-            }}
-            .button {{
-                display: inline-block;
-                padding: 12px 24px;
-                background-color: #4CAF50;
-                color: white;
-                text-decoration: none;
-                border-radius: 6px;
-                font-weight: bold;
-                margin-top: 20px;
-            }}
-            .footer {{
-                font-size: 13px;
-                color: #888888;
-                margin-top: 30px;
-            }}
-            .link-fallback {{
-                color: #4a90e2;
-                text-decoration: none;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h2>Confirmation email</h2>
-            <p>Thank you for registering in the service <strong>Bulletin Board</strong>.</p>
-            <p>Click the button below to activate your account:</p>
-            <a href="{link}" class="button">Confirm Email</a>
-            <p>Or <a href="{link}" class="link-fallback">click here</a>, if the button does not work.</p>
-            <div class="footer">
-                If you have not registered with us, simply ignore this email.
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "🔔 Confirmation Email"
-    msg["From"] = "Bulletin Board"
-    msg["To"] = email
-    msg.attach(MIMEText(html_body, "html"))
-
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(SMTP_USER, SMTP_PASS)
-        server.sendmail(SMTP_USER, email, msg.as_string())
-
-
-def send_password_reset_email(email: str, token: str):
-    link = f"http://localhost:8000/reset-password-form?token={token}"
-    
-    html_body = f"""
-    <!DOCTYPE html>
-    <html lang="uk">
-    <head>
-      <meta charset="UTF-8" />
-      <title>Password reset</title>
-      <style>
-        body {{
-          background-color: #f4f4f4;
-          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-          margin: 0;
-          padding: 0;
-        }}
-        .email-container {{
-          max-width: 600px;
-          margin: 40px auto;
-          background-color: #ffffff;
-          border-radius: 10px;
-          padding: 30px;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }}
-        h2 {{
-          color: #333333;
-          margin-bottom: 20px;
-        }}
-        p {{
-          color: #555555;
-          line-height: 1.6;
-        }}
-        .button {{
-          display: inline-block;
-          padding: 12px 24px;
-          background-color: #f44336;
-          color: white;
-          text-decoration: none;
-          border-radius: 6px;
-          font-weight: bold;
-          margin-top: 20px;
-        }}
-        .footer {{
-          font-size: 13px;
-          color: #888888;
-          margin-top: 30px;
-        }}
-        .link-fallback {{
-          word-break: break-word;
-          color: #4a90e2;
-        }}
-      </style>
-    </head>
-    <body>
-      <div class="email-container">
-        <h2>Password reset</h2>
-        <p>You received this email because you are trying to reset your account password.</p>
-        <p>To set a new password, click the button below:</p>
-        <a href="{link}" class="button">Reset password</a>
-        <p>Or <a href="{link}" class="link-fallback">click here</a>, if the button does not work.</p>
-        <div class="footer">
-          If you have not sent a password change request, simply ignore this email.
-        </div>
-      </div>
-    </body>
-    </html>
-    """
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "🔐 Password reset"
-    msg["From"] = "Bulletin Board"
-    msg["To"] = email
-    msg.attach(MIMEText(html_body, "html"))
-
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(SMTP_USER, SMTP_PASS)
-        server.sendmail(SMTP_USER, email, msg.as_string())
-
-
-def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
+@app.get("/chat/my", response_model=List[DialogueSummaryResponse], tags=["User"])
+def get_my_chats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email = payload.get("sub")
-        if email is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        user = db.query(User).filter(User.email == email).first()
-        if user is None:
-            raise HTTPException(status_code=404, detail="User not found")
-        return user
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    dialogues = db.query(Dialogue).filter(
+        (Dialogue.user_from == current_user.id) | (Dialogue.user_to == current_user.id)
+    ).all()
 
-def require_role(allowed_roles: list[str]):
-    def role_checker(current_user: User = Depends(get_current_user)):
-        if current_user.role not in allowed_roles:
-            raise HTTPException(status_code=403, detail="Access denied")
-        return current_user
-    return role_checker
+    result = []
 
-def safe_load_images(images_str: str):
-    if not images_str:
-        return []
-    try:
-        return json.loads(images_str)
-    except json.JSONDecodeError:
-        return []
+    for dialogue in dialogues:
+        if dialogue.user_from == current_user.id:
+            other_user = db.query(User).filter(User.id == dialogue.user_to).first()
+        else:
+            other_user = db.query(User).filter(User.id == dialogue.user_from).first()
 
-def send_new_post_email(to: str, post: Post) -> None:
-    link = f"http://localhost:8000/posts/{post.id}"
-    first_image = json.loads(post.images)[0] if post.images else None
+        if not other_user:
+            continue
 
-    html_body = f"""
-    <html>
-      <body style="background-color:#f9f9f9; padding:30px; font-family:Arial, sans-serif;">
-        <div style="max-width:600px; margin:auto; background-color:#ffffff; padding:20px; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
-          <h2 style="text-align:center; color:#333333;">🔔 New post for you!</h2>
-          
-          {'<img src="data:image/jpeg;base64,' + first_image + '" style="max-width:100%; border-radius:8px; margin-bottom:15px;" />' if first_image else ''}
+        last_message = (
+            db.query(Message)
+            .filter(Message.dialogue_id == dialogue.id)
+            .order_by(desc(Message.timestamp))
+            .first()
+        )
 
-          <h3 style="color:#007BFF; margin-bottom:5px;">{post.title}</h3>
-          <p style="color:#555555; font-size:15px; line-height:1.5;">{post.caption}</p>
-          <p style="font-size:16px; font-weight:bold; color:#000000;">Ціна: {post.price} грн</p>
+        post = db.query(Post).filter(Post.id == dialogue.post_id).first()
 
-          <div style="text-align:center; margin-top:25px;">
-            <a href="{link}" style="background-color:#28a745; color:white; padding:12px 20px; border-radius:5px; text-decoration:none; font-size:16px;">View the post</a>
-          </div>
+        post_response = PostShortResponse(
+            id=post.id if post else -1,
+            title=post.title if post else "Deleted post"
+        )
 
-          <hr style="margin-top:30px; border:none; border-top:1px solid #e0e0e0;" />
-          <p style="font-size:12px; color:#999999; text-align:center;">
-            You received this message because you are subscribed to new ads in your favorite categories.
-          </p>
-        </div>
-      </body>
-    </html>
-    """
+        result.append(DialogueSummaryResponse(
+            id=dialogue.id,
+            other_user=UserShortResponse(
+                id=other_user.id,
+                nickname=f"{other_user.name} {other_user.surname}",
+                avatarBase64=other_user.avatarBase64
+            ),
+            post=post_response,
+            last_message=last_message.message if last_message else None,
+            last_message_time=last_message.timestamp if last_message else None
+        ))
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "New ad in your favorite category 📢"
-    msg["From"] = "Bulletin Board"
-    msg["To"] = to
-    msg.attach(MIMEText(html_body, "html"))
+    return result
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(SMTP_USER, SMTP_PASS)
-        server.sendmail(SMTP_USER, to, msg.as_string())
+@app.get("/verification/requests", response_model=List[VerificationResponse], tags=["Admin"])
+def get_verification_requests(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role(["Admin", "Owner"]))
+):
+    requests = db.query(VerificationRequest).filter_by(status="pending").all()
 
-def safe_load_tags(tags_str: str):
-    if not tags_str:
-        return []
-    try:
-        return json.loads(tags_str)
-    except json.JSONDecodeError:
-        return [t.strip() for t in tags_str.split(",") if t.strip()]
+    return [
+        VerificationResponse(
+            id=r.id,
+            user_id=r.user_id,
+            email=r.user.email,
+            name=r.user.name,
+            surname=r.user.surname,
+            avatarBase64=r.user.avatarBase64,
+            phone=r.user.phone,
+            images=json.loads(r.images),
+            status=r.status,
+            created_at=r.created_at
+        ) for r in requests
+    ]
 
-@app.post("/register", response_model=Token,tags=["User"])
+@app.get("/chat/with/{other_user_id}", response_model=DialogueDetailResponse, tags=["User"])
+def get_conversation(
+    other_user_id: int,
+    post_id: int = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if other_user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot create a chat with yourself")
+
+    dialogue = db.query(Dialogue).filter(
+        (
+            ((Dialogue.user_from == current_user.id) & (Dialogue.user_to == other_user_id)) |
+            ((Dialogue.user_from == other_user_id) & (Dialogue.user_to == current_user.id))
+        ) & (Dialogue.post_id == post_id)
+    ).first()
+
+    if not dialogue:
+        dialogue = Dialogue(
+            user_from=current_user.id,
+            user_to=other_user_id,
+            post_id=post_id
+        )
+        db.add(dialogue)
+        db.commit()
+        db.refresh(dialogue)
+
+    if dialogue.user_from == current_user.id:
+        other_user = db.query(User).filter(User.id == dialogue.user_to).first()
+    else:
+        other_user = db.query(User).filter(User.id == dialogue.user_from).first()
+
+    post = db.query(Post).filter(Post.id == dialogue.post_id).first()
+    messages = db.query(Message).filter(Message.dialogue_id == dialogue.id).order_by(Message.timestamp.asc()).all()
+
+    messages_response = [
+        MessageResponse(
+            id=msg.id,
+            dialogue_id=msg.dialogue_id,
+            user_id=msg.user_id,
+            message=msg.message,
+            timestamp=msg.timestamp
+        )
+        for msg in messages
+    ]
+
+    return DialogueDetailResponse(
+        other_user=UserShortResponse(
+            id=other_user.id,
+            nickname=f"{other_user.name} {other_user.surname}"
+        ),
+        post=PostShortResponse(
+            id=post.id if post else post_id,
+            title=post.title if post else "The post has been removed"
+        ),
+        messages=messages_response
+    )
+
+@app.get("/categories/favorite", tags=["User"])
+def get_favorite_categories(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    favorites = (
+        db.query(Category)
+        .join(FavoriteCategory, FavoriteCategory.category_id == Category.id)
+        .filter(FavoriteCategory.user_id == current_user.id)
+        .all()
+    )
+
+    return [{"id": cat.id, "name": cat.name} for cat in favorites]
+
+@app.post("/register", response_model=Token, tags=["User"])
 def register(user: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter_by(email=user.email).first():
         raise HTTPException(status_code=400, detail="Email is already registered!")
-    if not verify_password(user.password):
+    if len(user.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
     if not (1 <= len(user.name) <= 50):
         raise HTTPException(status_code=400, detail="Name must be between 1 and 50 characters.")
@@ -484,7 +236,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_user)
 
-    token = create_access_token(db_user)
+    token = create_access_token({"sub": db_user.email})
     send_verification_email(db_user.email, token)
 
     return {"access_token": token, "token_type": "bearer"}
@@ -523,14 +275,95 @@ def make_user_admin(
     db.commit()
     return {"message": f"User successfully promoted to administrator"}
 
-@app.post("/forgot-password",tags=["User"])
+@app.post("/forgot-password", tags=["User"])
 def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter_by(email=request.email).first()
     if user:
-        token = create_access_token(user, expires_delta=timedelta(hours=1))
+        token = create_access_token({"sub": user.email}, expires_delta=timedelta(hours=1))
         send_password_reset_email(user.email, token)
     
     return {"message": "If such an email exists, an email to change the password will be sent to it"}
+
+@app.post("/chat/send", response_model=SendMessageResponse, tags=["User"])
+def send_message(
+    request: SendMessageRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    dialogue = db.query(Dialogue).filter(
+        (
+            ((Dialogue.user_from == current_user.id) & (Dialogue.user_to == request.other_user_id)) |
+            ((Dialogue.user_from == request.other_user_id) & (Dialogue.user_to == current_user.id))
+        ) & (Dialogue.post_id == request.post_id)
+    ).first()
+
+    if not dialogue:
+        dialogue = Dialogue(
+            user_from=current_user.id,
+            user_to=request.other_user_id,
+            post_id=request.post_id
+        )
+        db.add(dialogue)
+        db.commit()
+        db.refresh(dialogue)
+
+    message = Message(
+        dialogue_id=dialogue.id,
+        user_id=current_user.id,
+        message=request.message,
+        timestamp=datetime.utcnow()
+    )
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+
+    return SendMessageResponse(success=True, message_id=message.id)
+
+@app.post("/categories/favorite/{category_id}", tags=["User"])
+def add_favorite_category(
+    category_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    exists = db.query(FavoriteCategory).filter_by(user_id=current_user.id, category_id=category_id).first()
+    if exists:
+        raise HTTPException(status_code=400, detail="The category is already in favorites")
+
+    fav = FavoriteCategory(user_id=current_user.id, category_id=category_id)
+    db.add(fav)
+    db.commit()
+    return {"message": "The category has been added to favorites"}
+
+@app.post("/login", response_model=Token, tags=["User"])
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = db.query(User).filter_by(email=form_data.username).first()
+    if not user or not verify_password(form_data.password, user.password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not user.isEmailConfirmed:
+        raise HTTPException(status_code=403, detail="Email not confirmed!")
+    if user.isBlocked:
+        raise HTTPException(status_code=403, detail=f"User is blocked. Reason: {user.blockReason or 'not specified'}")
+
+    token = create_access_token(data={"sub": user.email})
+
+    return {"access_token": token, "token_type": "bearer"}
+
+@app.put("/update-profile", tags=["User"])
+def update_profile(
+    data: UpdateProfile,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    current_user.name = data.name
+    current_user.surname = data.surname
+    current_user.phone = data.phone
+
+    if data.avatarBase64 is not None:
+        current_user.avatarBase64 = data.avatarBase64
+
+    db.commit()
+    db.refresh(current_user)
+    return {"message": "Profile updated successfully"}
 
 @app.get("/posts/filter", tags=["Post"])
 def search_posts(
@@ -541,7 +374,7 @@ def search_posts(
     tags: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    query = db.query(Post)
+    query = db.query(Post).filter(Post.isClosed == False)
 
     if title:
         query = query.filter(Post.title.ilike(f"%{title}%"))
@@ -588,17 +421,114 @@ def get_blocked_users(db: Session = Depends(get_db), _: User = Depends(require_r
         })
     return result
 
+@app.get("/my/posts", response_model=List[PostResponse], tags=["Post"])
+def get_my_posts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    posts = (
+        db.query(Post)
+        .filter(Post.userId == current_user.id)
+        .order_by(Post.createdAt.desc())
+        .all()
+    )
+
+    if not posts:
+        raise HTTPException(status_code=404, detail="You don't have any posts")
+
+    result = []
+    for post in posts:
+        category = db.query(Category).filter(Category.id == post.category_id).first()
+
+        result.append(PostResponse(
+            id=post.id,
+            title=post.title,
+            caption=post.caption,
+            price=post.price,
+            images=safe_load_images(post.images),
+            tags=safe_load_tags(post.tags),
+            views=post.views,
+            isPromoted=post.isPromoted,
+            createdAt=post.createdAt.isoformat(),
+            is_scam=post.is_scam,
+            userId=post.userId,
+            category_id=post.category_id,
+            category_name=category.name if category else None,
+            isUsed=post.isUsed,            
+            currency=post.currency,       
+            location=post.location 
+        ))
+
+    return result
+
 @app.get("/posts", tags=["Post"])
 def get_posts(db: Session = Depends(get_db)):
-    posts = db.query(Post).order_by(Post.createdAt.desc()).all()
+    posts = db.query(Post)\
+              .filter(Post.isClosed == False)\
+              .order_by(Post.createdAt.desc())\
+              .all()
+    if not posts:
+        raise HTTPException(status_code=404, detail="There are no posts yet") 
     for post in posts:
         post.images = safe_load_images(post.images)
         post.tags = safe_load_tags(post.tags)
     return posts
 
+@app.post("/posts/{id}/close", tags=["Post"])
+def close_ad(
+    id: int,
+    reason: CloseReason = Form(...),  
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    post = db.query(Post).filter(Post.id == id, Post.userId == current_user.id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found or not yours")
+
+    if post.isClosed:
+        raise HTTPException(status_code=400, detail="Post already closed")
+
+    post.isClosed = True
+    post.closeReason = reason.value
+    db.commit()
+
+    return {"message": f"Post {id} closed successfully", "reason": reason.value}
+
+@app.post("/reviews", response_model=ReviewResponse, tags=["Reviews"])
+def create_review(
+    sellerId: int = Form(...),
+    text: str = Form(...),
+    rating: RatingEnum = Form(...),  
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if sellerId == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot review yourself")
+
+    review = Review(
+        sellerId=sellerId,
+        authorId=current_user.id,
+        text=text,
+        rating=rating.value  
+    )
+    db.add(review)
+    db.commit()
+    db.refresh(review)
+
+    all_reviews = db.query(Review).filter(Review.sellerId == sellerId).all()
+    avg_rating = sum(r.rating for r in all_reviews) / len(all_reviews)
+
+    seller = db.query(User).filter(User.id == sellerId).first()
+    seller.rating = avg_rating
+    seller.reviewsCount = len(all_reviews)
+
+    db.commit()
+
+    return review
+
 @app.get("/posts/{post_id}", response_model=PostResponse, tags=["Post"])
 def get_post(post_id: int, db: Session = Depends(get_db)):
-    post = db.query(Post).filter(Post.id == post_id).first()
+    post = db.query(Post).filter(Post.id == post_id, Post.isClosed == False).first()
     if not post:
         raise HTTPException(status_code=404, detail="No post found")
 
@@ -642,6 +572,9 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
         user=user_info,
         category_id=post.category_id,
         category_name=category.name if category else None,
+        currency=post.currency,
+        location=post.location,
+        isUsed=post.isUsed
     )
 
 @app.get("/reset-password-form", response_class=HTMLResponse)
@@ -719,236 +652,10 @@ def verify_email(token: str, db: Session = Depends(get_db)):
     except JWTError:
         raise HTTPException(status_code=400, detail="Invalid token")
 
-@app.get("/me",tags=["User"])
-def read_users_me(current_user: User = Depends(get_current_user)):
-    return {
-        "id": current_user.id,
-        "name": current_user.name,
-        "surname": current_user.surname,
-        "email": current_user.email,
-        "phone": current_user.phone,
-        "isEmailConfirmed": current_user.isEmailConfirmed,
-        "role": current_user.role,
-        "createdAt": current_user.createdAt
-    }
-
 @app.get("/categories",tags=["Admin"])
 def list_categories(db: Session = Depends(get_db)):
     return db.query(Category).all()
 
-class Dialogue(Base):
-    __tablename__ = "dialogues"
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_from = Column(Integer, ForeignKey("users.id"), nullable=False)
-    user_to = Column(Integer, ForeignKey("users.id"), nullable=False)
-    post_id = Column(Integer, ForeignKey("posts.id"), nullable=False)
-
-    user_from_rel = relationship("User", foreign_keys=[user_from])
-    user_to_rel = relationship("User", foreign_keys=[user_to])
-    post_rel = relationship("Post")
-
-class Message(Base):
-    __tablename__ = "messages"
-
-    id = Column(Integer, primary_key=True, index=True)
-    dialogue_id = Column(Integer, ForeignKey("dialogues.id"), nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    message = Column(String, nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow)
-
-    dialogue = relationship("Dialogue", backref="messages")
-    user = relationship("User")
-
-class UserShortResponse(BaseModel):
-    id: int
-    nickname: str
-
-class PostShortResponse(BaseModel):
-    id: int
-    title: str
-
-class MessageResponse(BaseModel):
-    id: int
-    dialogue_id: int
-    user_id: int
-    message: str
-    timestamp: datetime
-
-class DialogueSummaryResponse(BaseModel):
-    id: int
-    other_user: UserShortResponse
-    post: PostShortResponse
-    last_message: Optional[str]
-    last_message_time: Optional[datetime]
-
-class DialogueDetailResponse(BaseModel):
-    other_user: UserShortResponse
-    post: PostShortResponse
-    messages: List[MessageResponse]
-
-class SendMessageRequest(BaseModel):
-    other_user_id: int
-    post_id: int
-    message: str
-
-class SendMessageResponse(BaseModel):
-    success: bool
-    message_id: Optional[int]
-
-@app.get("/chat/my", response_model=List[DialogueSummaryResponse], tags=["User"])
-def get_my_chats(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    dialogues = db.query(Dialogue).filter(
-        (Dialogue.user_from == current_user.id) | (Dialogue.user_to == current_user.id)
-    ).all()
-
-    result = []
-
-    for dialogue in dialogues:
-        if dialogue.user_from == current_user.id:
-            other_user = db.query(User).filter(User.id == dialogue.user_to).first()
-        else:
-            other_user = db.query(User).filter(User.id == dialogue.user_from).first()
-
-        if not other_user:
-            continue
-
-        last_message = (
-            db.query(Message)
-            .filter(Message.dialogue_id == dialogue.id)
-            .order_by(desc(Message.timestamp))
-            .first()
-        )
-
-        post = db.query(Post).filter(Post.id == dialogue.post_id).first()
-
-        post_response = PostShortResponse(
-            id=post.id if post else -1,
-            title=post.title if post else "Deleted post"
-        )
-
-        result.append(DialogueSummaryResponse(
-            id=dialogue.id,
-            other_user=UserShortResponse(
-                id=other_user.id,
-                nickname=f"{other_user.name} {other_user.surname}"
-            ),
-            post=post_response,
-            last_message=last_message.message if last_message else None,
-            last_message_time=last_message.timestamp if last_message else None
-        ))
-
-    return result
-
-@app.get("/chat/with/{other_user_id}", response_model=DialogueDetailResponse, tags=["User"])
-def get_conversation(
-    other_user_id: int,
-    post_id: int = Query(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    if other_user_id == current_user.id:
-        raise HTTPException(status_code=400, detail="Cannot create a chat with yourself")
-
-    dialogue = db.query(Dialogue).filter(
-        (
-            ((Dialogue.user_from == current_user.id) & (Dialogue.user_to == other_user_id)) |
-            ((Dialogue.user_from == other_user_id) & (Dialogue.user_to == current_user.id))
-        ) & (Dialogue.post_id == post_id)
-    ).first()
-
-    if not dialogue:
-        dialogue = Dialogue(
-            user_from=current_user.id,
-            user_to=other_user_id,
-            post_id=post_id
-        )
-        db.add(dialogue)
-        db.commit()
-        db.refresh(dialogue)
-
-    if dialogue.user_from == current_user.id:
-        other_user = db.query(User).filter(User.id == dialogue.user_to).first()
-    else:
-        other_user = db.query(User).filter(User.id == dialogue.user_from).first()
-
-    post = db.query(Post).filter(Post.id == dialogue.post_id).first()
-    messages = db.query(Message).filter(Message.dialogue_id == dialogue.id).order_by(Message.timestamp.asc()).all()
-
-    messages_response = [
-        MessageResponse(
-            id=msg.id,
-            dialogue_id=msg.dialogue_id,
-            user_id=msg.user_id,
-            message=msg.message,
-            timestamp=msg.timestamp
-        )
-        for msg in messages
-    ]
-
-    return DialogueDetailResponse(
-        other_user=UserShortResponse(
-            id=other_user.id,
-            nickname=f"{other_user.name} {other_user.surname}"
-        ),
-        post=PostShortResponse(
-            id=post.id if post else post_id,
-            title=post.title if post else "The post has been removed"
-        ),
-        messages=messages_response
-    )
-
-@app.post("/chat/send", response_model=SendMessageResponse, tags=["User"])
-def send_message(
-    request: SendMessageRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    dialogue = db.query(Dialogue).filter(
-        (
-            ((Dialogue.user_from == current_user.id) & (Dialogue.user_to == request.other_user_id)) |
-            ((Dialogue.user_from == request.other_user_id) & (Dialogue.user_to == current_user.id))
-        ) & (Dialogue.post_id == request.post_id)
-    ).first()
-
-    if not dialogue:
-        dialogue = Dialogue(
-            user_from=current_user.id,
-            user_to=request.other_user_id,
-            post_id=request.post_id
-        )
-        db.add(dialogue)
-        db.commit()
-        db.refresh(dialogue)
-
-    message = Message(
-        dialogue_id=dialogue.id,
-        user_id=current_user.id,
-        message=request.message,
-        timestamp=datetime.utcnow()
-    )
-    db.add(message)
-    db.commit()
-    db.refresh(message)
-
-    return SendMessageResponse(success=True, message_id=message.id)
-
-class ComplaintResponse(BaseModel):
-    id: int
-    post_id: Optional[int]
-    user_id: Optional[int]
-    message: str
-    created_at: datetime
-
-    complained_user_name: Optional[str]
-    complained_user_surname: Optional[str]
-    complained_post_title: Optional[str]
-
-    class Config:
-        orm_mode = True
 
 @app.get("/complaints", response_model=List[ComplaintResponse], tags=["Admin"])
 def list_complaints(
@@ -1061,23 +768,26 @@ def reset_password(
     except JWTError:
         raise HTTPException(status_code=400, detail="Invalid or expired token")
 
-@app.post("/posts",tags=["Post"])
+@app.post("/posts", tags=["Post"])
 async def create_post(
-    title: str = Form(...,max_length=100),
-    caption: str = Form(...,max_length=1000),
+    title: str = Form(..., max_length=100),
+    caption: str = Form(..., max_length=1000),
     price: int = Form(...),
     tags: str = Form(""),
     category_id: int = Form(...),
-    images: List[UploadFile] = File([]),  
+    isUsed: bool = Form(...),
+    currency: CurrencyEnum = Form(...),
+    location: CityEnum = Form(...),
+    images: List[UploadFile] = File([]),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     if not current_user.isVerified:
         raise HTTPException(status_code=403, detail="Only verified users can create posts")
-    
+
     if price < 0:
         raise HTTPException(status_code=400, detail="Price cannot be less than 0")
-    
+
     import base64
     import json
 
@@ -1094,9 +804,8 @@ async def create_post(
         contents = await image.read()
         encoded = base64.b64encode(contents).decode("utf-8")
         image_list.append(encoded)
-        
+
     encoded_images = json.dumps(image_list)
-    
     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
     encoded_tags = json.dumps(tag_list)
 
@@ -1107,124 +816,29 @@ async def create_post(
         tags=encoded_tags,
         category_id=category_id,
         images=encoded_images,
-        userId=current_user.id
+        userId=current_user.id,
+        isUsed=isUsed,
+        currency=currency,
+        location=location
     )
     db.add(new_post)
     db.commit()
     db.refresh(new_post)
-    
+
     fav_users = (
-    db.query(User)
-    .join(FavoriteCategory, FavoriteCategory.user_id == User.id)
-    .filter(FavoriteCategory.category_id == new_post.category_id)
-    .filter(User.isEmailConfirmed == True)
-    .all()
+        db.query(User)
+        .join(FavoriteCategory, FavoriteCategory.user_id == User.id)
+        .filter(FavoriteCategory.category_id == new_post.category_id)
+        .filter(User.isEmailConfirmed == True)
+        .all()
     )
 
     for user in fav_users:
         send_new_post_email(user.email, new_post)
+
     new_post.tags = safe_load_tags(new_post.tags)
     new_post.images = safe_load_images(new_post.images)
     return new_post
-
-
-@app.post("/categories/favorite/{category_id}", tags=["User"])
-def add_favorite_category(
-    category_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    exists = db.query(FavoriteCategory).filter_by(user_id=current_user.id, category_id=category_id).first()
-    if exists:
-        raise HTTPException(status_code=400, detail="The category is already in favorites")
-
-    fav = FavoriteCategory(user_id=current_user.id, category_id=category_id)
-    db.add(fav)
-    db.commit()
-    return {"message": "The category has been added to favorites"}
-
-@app.delete("/categories/favorite/{category_id}", tags=["User"])
-def remove_favorite_category(
-    category_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    favorite = db.query(FavoriteCategory).filter_by(
-        user_id=current_user.id,
-        category_id=category_id
-    ).first()
-
-    if not favorite:
-        raise HTTPException(status_code=404, detail="Category not found in favorites")
-
-    db.delete(favorite)
-    db.commit()
-    return {"message": "The category has been removed from favorites"}
-
-@app.get("/categories/favorite", tags=["User"])
-def get_favorite_categories(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    favorites = (
-        db.query(Category)
-        .join(FavoriteCategory, FavoriteCategory.category_id == Category.id)
-        .filter(FavoriteCategory.user_id == current_user.id)
-        .all()
-    )
-
-    return [{"id": cat.id, "name": cat.name} for cat in favorites]
-
-@app.get("/my/posts", response_model=List[PostResponse], tags=["Post"])
-def get_my_posts(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    posts = (
-        db.query(Post)
-        .filter(Post.userId == current_user.id)
-        .order_by(Post.createdAt.desc())
-        .all()
-    )
-
-    if not posts:
-        raise HTTPException(status_code=404, detail="You don't have any posts")
-
-    result = []
-    for post in posts:
-        category = db.query(Category).filter(Category.id == post.category_id).first()
-
-        result.append(PostResponse(
-            id=post.id,
-            title=post.title,
-            caption=post.caption,
-            price=post.price,
-            images=safe_load_images(post.images),
-            tags=safe_load_tags(post.tags),
-            views=post.views,
-            isPromoted=post.isPromoted,
-            createdAt=post.createdAt.isoformat(),
-            is_scam=post.is_scam,
-            userId=post.userId,
-            category_id=post.category_id,
-            category_name=category.name if category else None
-        ))
-
-    return result
-
-@app.post("/login", response_model=Token, tags=["User"])
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = db.query(User).filter_by(email=form_data.username).first()
-    if not user or not verify_password(form_data.password, user.password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    if not user.isEmailConfirmed:
-        raise HTTPException(status_code=403, detail="Email not confirmed!")
-    if user.isBlocked:
-        raise HTTPException(status_code=403, detail=f"User is blocked. Reason: {user.blockReason or 'not specified'}")
-    
-    token = create_access_token(user)
-    
-    return {"access_token": token, "token_type": "bearer"}
 
 @app.post("/categories",tags=["Admin"])
 def create_category(category: CategoryCreate, db: Session = Depends(get_db)):
@@ -1262,7 +876,7 @@ def verify_post(
 @app.put("/users/block/{user_id}", tags=["Admin"])
 def block_user(
     user_id: int,
-    data: BlockUserRequest = Body(...),
+    data: BlockUserRequest = Form(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(["Admin", "Owner"]))
 ):
@@ -1287,15 +901,6 @@ def block_user(
     db.commit()
     return {"message": f"User {'blocked' if data.isBlocked else 'unlocked'}"}
 
-@app.put("/update-profile",tags=["User"])
-def update_profile(data: UpdateProfile, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    current_user.name = data.name
-    current_user.surname = data.surname
-    current_user.phone = data.phone
-    db.commit()
-    db.refresh(current_user)
-    return {"message": "Profile updated successfully"}
-
 @app.put("/categories/{cat_id}",tags=["Admin"])
 def update_category(cat_id: int, category: CategoryCreate, db: Session = Depends(get_db)):
     cat = db.query(Category).filter_by(id=cat_id).first()
@@ -1304,41 +909,6 @@ def update_category(cat_id: int, category: CategoryCreate, db: Session = Depends
     cat.name = category.name
     db.commit()
     return cat
-
-class VerificationRequest(Base):
-    __tablename__ = "verification_requests"
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"), unique=True)
-    images = Column(String)
-    status = Column(String, default="pending")
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    user = relationship("User")
-
-class VerificationRequestCreate(BaseModel):
-    images: List[str]
-
-class VerificationResponse(BaseModel):
-    id: int
-    user_id: int
-    email: str
-    name: Optional[str]
-    surname: Optional[str]
-    avatarBase64: Optional[str]
-    phone: Optional[str]
-    images: List[str]
-    status: str
-    created_at: datetime
-
-    class Config:
-        orm_mode = True
-
-class VerificationStatus(str, Enum):
-    approved = "approved"
-    rejected = "rejected"
-
-class VerificationUpdate(BaseModel):
-    status: VerificationStatus
 
 @app.post("/verification/request", tags=["Verification"])
 async def request_verification(
@@ -1373,34 +943,10 @@ async def request_verification(
 
     return {"detail": "Verification request submitted successfully"}
 
-
-@app.get("/verification/requests", response_model=List[VerificationResponse], tags=["Admin"])
-def get_verification_requests(
-    db: Session = Depends(get_db),
-    _: User = Depends(require_role(["Admin", "Owner"]))
-):
-    requests = db.query(VerificationRequest).filter_by(status="pending").all()
-
-    return [
-        VerificationResponse(
-            id=r.id,
-            user_id=r.user_id,
-            email=r.user.email,
-            name=r.user.name,
-            surname=r.user.surname,
-            avatarBase64=r.user.avatarBase64,
-            phone=r.user.phone,
-            images=json.loads(r.images),
-            status=r.status,
-            created_at=r.created_at
-        ) for r in requests
-    ]
-
-
 @app.put("/verification/requests/{request_id}", tags=["Admin"])
 def verify_user_request(
     request_id: int,
-    update: VerificationUpdate,
+    status: VerificationStatus = Form(...),
     db: Session = Depends(get_db),
     _: User = Depends(require_role(["Admin", "Owner"]))
 ):
@@ -1408,9 +954,9 @@ def verify_user_request(
     if not req:
         raise HTTPException(status_code=404, detail="Verification request not found")
 
-    req.status = update.status.value
+    req.status = status.value
 
-    if update.status == VerificationStatus.approved:
+    if status == VerificationStatus.approved:
         req.user.isVerified = True
         message = "Verification request approved"
     else:
@@ -1418,32 +964,6 @@ def verify_user_request(
 
     db.commit()
     return {"detail": message}
-
-@app.delete("/posts/{post_id}", tags=["User"])
-def delete_post(
-    post_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    db_post = db.query(Post).filter_by(id=post_id).first()
-    if not db_post:
-        raise HTTPException(status_code=404, detail="No posts found")
-
-    if db_post.userId != current_user.id and current_user.role not in ["Admin", "Owner"]:
-        raise HTTPException(status_code=403, detail="No rights to delete this post")
-
-    db.delete(db_post)
-    db.commit()
-    return {"message": "Post deleted"}
-
-@app.delete("/categories/{cat_id}",tags=["Admin"])
-def delete_category(cat_id: int, db: Session = Depends(get_db), _: User = Depends(require_role(["Admin", "Owner"]))):
-    cat = db.query(Category).filter_by(id=cat_id).first()
-    if not cat:
-        raise HTTPException(status_code=404, detail="Category not found")
-    db.delete(cat)
-    db.commit()
-    return {"message": "Category deleted"}
 
 @app.put("/admins/{user_id}/demote", tags=["Owner"])
 def demote_admin(
@@ -1460,93 +980,34 @@ def demote_admin(
     db.commit()
     return {"message": "Administrator demoted to user"}
 
+@app.delete("/categories/favorite/{category_id}", tags=["User"])
+def remove_favorite_category(
+    category_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    favorite = db.query(FavoriteCategory).filter_by(
+        user_id=current_user.id,
+        category_id=category_id
+    ).first()
+
+    if not favorite:
+        raise HTTPException(status_code=404, detail="Category not found in favorites")
+
+    db.delete(favorite)
+    db.commit()
+    return {"message": "The category has been removed from favorites"}
+
+@app.delete("/categories/{cat_id}",tags=["Admin"])
+def delete_category(cat_id: int, db: Session = Depends(get_db), _: User = Depends(require_role(["Admin", "Owner"]))):
+    cat = db.query(Category).filter_by(id=cat_id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail="Category not found")
+    db.delete(cat)
+    db.commit()
+    return {"message": "Category deleted"}
 
 Base.metadata.create_all(bind=engine)
-
-def create_default_owner_and_categories():
-    db = SessionLocal()
-    try:
-        user_count = db.query(User).count()
-        if user_count == 0:
-            owner = User(
-                name="Bodya",
-                surname="Raz",
-                phone="+380562323765",
-                email="Razum_ld54@student.itstep.org",
-                password=hash_password("123456789"),
-                role="Owner",
-                isVerified=True,
-                isEmailConfirmed=True
-            )
-            db.add(owner)
-            
-            admin = User(
-                name="Daniil",
-                surname="Shtyvola",
-                phone="+3802546848",
-                email="danyashtyvola@gmail.com",
-                password=hash_password("123456789"),
-                role="Admin",
-                isVerified=True,
-                isEmailConfirmed=True
-            )
-            db.add(admin)
-
-            user1 = User(
-                name="Patrick",
-                surname="Star",
-                phone="+3802347234794",
-                email="patrick_star2352@gmail.com",
-                password=hash_password("123456789"),
-                role="User",
-                isVerified=True,
-                isEmailConfirmed=True
-            )
-            db.add(user1)
-
-            user2 = User(
-                name="Sponge",
-                surname="Bob",
-                phone="+380732571617",
-                email="sponge_bober263@gmail.com",
-                password=hash_password("123456789"),
-                role="User",
-                isVerified=True,
-                isEmailConfirmed=True
-            )
-            db.add(user2)
-
-            user3 = User(
-                name="Asuka",
-                surname="Langley",
-                phone="+38047234717",
-                email="asuka_langley2135@gmail.com",
-                password=hash_password("123456789"),
-                role="User",
-                isEmailConfirmed=True
-            )
-            db.add(user3)
-
-            user4 = User(
-                name="Ayanami",
-                surname="Rei",
-                phone="+380439867134",
-                email="ayanami_rei23858@gmail.com",
-                password=hash_password("123456789"),
-                role="User",
-                isEmailConfirmed=True
-            )
-            db.add(user4)
-
-        categories = ["Toys", "Electronics", "Clothes", "Furniture"]
-        for cat_name in categories:
-            exists = db.query(Category).filter_by(name=cat_name).first()
-            if not exists:
-                new_cat = Category(name=cat_name)
-                db.add(new_cat)
-
-        db.commit()
-    finally:
-        db.close()
-
 create_default_owner_and_categories()
+
+

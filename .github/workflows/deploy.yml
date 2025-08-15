@@ -1,4 +1,4 @@
-name: Deploy
+ name: Deploy
 
 on:
   push:
@@ -33,14 +33,5 @@ jobs:
         ssh azureuser@beez.pp.ua << 'EOF'
           cd /home/azureuser/Back
           docker compose down
-          docker compose up -d --build --remove-orphans
-          echo "⏳ Waiting for FastAPI to be ready..."
-          for i in {1..10}; do
-            if curl -sSf http://localhost:8000/docs > /dev/null; then
-              echo "✅ FastAPI is up!"
-              break
-            fi
-            echo "Waiting..."
-            sleep 5
-          done
+          docker compose up -d --build
         EOF

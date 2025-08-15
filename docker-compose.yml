@@ -11,6 +11,11 @@ services:
       - "8000"
     networks:
       - web
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   nginx:
     image: nginx:alpine
@@ -23,6 +28,9 @@ services:
       - ./nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf
       - ./certbot/www:/var/www/certbot
       - ./certbot/conf:/etc/letsencrypt
+    depends_on:
+      app:
+        condition: service_healthy
     networks:
       - web
 

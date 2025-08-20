@@ -227,6 +227,27 @@ def send_new_post_email(to: str, post: Post) -> None:
     link = f"http://localhost:8000/posts/{post.id}"
     first_image = json.loads(post.images)[0] if post.images else None
 
+    # Маппинг валют
+    currency_map = {
+        "UAH": "грн",
+        "USD": "$",
+        "EUR": "€"
+    }
+
+    # Если нет валюты — ставим грн
+    currency = currency_map.get(post.currency, post.currency or "грн")
+
+    # Состояние вещи
+    condition = "Б/У" if post.isUsed else "Нове"
+
+    # Локация (Enum -> value, строка -> как есть, иначе "Не вказано")
+    location = "Не вказано"
+    if getattr(post, "location", None):
+        try:
+            location = post.location.value  # если Enum
+        except AttributeError:
+            location = post.location        # если строка
+
     html_body = f"""
     <html>
       <body style="background-color:#f9f9f9; padding:30px; font-family:Arial, sans-serif;">
@@ -237,7 +258,10 @@ def send_new_post_email(to: str, post: Post) -> None:
 
           <h3 style="color:#007BFF; margin-bottom:5px;">{post.title}</h3>
           <p style="color:#555555; font-size:15px; line-height:1.5;">{post.caption}</p>
-          <p style="font-size:16px; font-weight:bold; color:#000000;">Ціна: {post.price} грн</p>
+          
+          <p style="font-size:16px; font-weight:bold; color:#000000;">Ціна: {post.price} {currency}</p>
+          <p style="font-size:15px; color:#333333;">Стан: {condition}</p>
+          <p style="font-size:15px; color:#333333;">Локація: {location}</p>
 
           <div style="text-align:center; margin-top:25px;">
             <a href="{link}" style="background-color:#28a745; color:white; padding:12px 20px; border-radius:5px; text-decoration:none; font-size:16px;">View the post</a>
@@ -261,6 +285,7 @@ def send_new_post_email(to: str, post: Post) -> None:
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(SMTP_USER, SMTP_PASS)
         server.sendmail(SMTP_USER, to, msg.as_string())
+
 
 def safe_load_tags(tags_str: str):
     if not tags_str:

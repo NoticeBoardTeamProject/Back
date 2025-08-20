@@ -421,6 +421,57 @@ def get_blocked_users(db: Session = Depends(get_db), _: User = Depends(require_r
         })
     return result
 
+@app.get("/posts/{post_id}", response_model=PostResponse, tags=["Post"])
+def get_post(post_id: int, db: Session = Depends(get_db)):
+    post = db.query(Post).filter(Post.id == post_id, Post.isClosed == False).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="No post found")
+
+    post.views = (post.views or 0) + 1
+    db.add(post)
+    db.commit()
+    db.refresh(post)
+
+    user = db.query(User).filter(User.id == post.userId).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    category = db.query(Category).filter(Category.id == post.category_id).first()
+
+    post.images = safe_load_images(post.images)
+
+    post_tags = safe_load_tags(post.tags)
+
+    user_info = UserInfo(
+        id=user.id,
+        name=user.name,
+        surname=user.surname,
+        phone=user.phone,
+        email=user.email,
+        avatarBase64=user.avatarBase64,
+        createdAt=user.createdAt.isoformat()
+    )
+
+    return PostResponse(
+        id=post.id,
+        title=post.title,
+        caption=post.caption,
+        price=post.price,
+        images=post.images,
+        tags=post_tags,
+        views=post.views,
+        isPromoted=post.isPromoted,
+        createdAt=post.createdAt.isoformat(),
+        is_scam=post.is_scam,
+        userId=post.userId,
+        user=user_info,
+        category_id=post.category_id,
+        category_name=category.name if category else None,
+        currency=post.currency,
+        location=post.location,
+        isUsed=post.isUsed
+    )
+
 @app.get("/my/posts", response_model=List[PostResponse], tags=["Post"])
 def get_my_posts(
     db: Session = Depends(get_db),
@@ -494,6 +545,23 @@ def close_ad(
 
     return {"message": f"Post {id} closed successfully", "reason": reason.value}
 
+@app.get("/reviews/{seller_id}", response_model=List[ReviewResponse], tags=["Reviews"])
+def get_reviews(seller_id: int, db: Session = Depends(get_db)):
+    reviews = db.query(Review).filter(Review.sellerId == seller_id).all()
+    if not reviews:
+        raise HTTPException(status_code=404, detail="No reviews found for this seller")
+    return reviews
+
+@app.get("/my/reviews", response_model=List[ReviewResponse], tags=["Reviews"])
+def get_my_received_reviews(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    reviews = db.query(Review).filter(Review.sellerId == current_user.id).all()
+    if not reviews:
+        raise HTTPException(status_code=404, detail="You have not received any reviews yet")
+    return reviews
+
 @app.post("/reviews", response_model=ReviewResponse, tags=["Reviews"])
 def create_review(
     sellerId: int = Form(...),
@@ -505,6 +573,10 @@ def create_review(
     if sellerId == current_user.id:
         raise HTTPException(status_code=400, detail="You cannot review yourself")
 
+    seller = db.query(User).filter(User.id == sellerId).first()
+    if not seller:
+        raise HTTPException(status_code=404, detail="Seller not found")
+    
     review = Review(
         sellerId=sellerId,
         authorId=current_user.id,
@@ -525,57 +597,6 @@ def create_review(
     db.commit()
 
     return review
-
-@app.get("/posts/{post_id}", response_model=PostResponse, tags=["Post"])
-def get_post(post_id: int, db: Session = Depends(get_db)):
-    post = db.query(Post).filter(Post.id == post_id, Post.isClosed == False).first()
-    if not post:
-        raise HTTPException(status_code=404, detail="No post found")
-
-    post.views = (post.views or 0) + 1
-    db.add(post)
-    db.commit()
-    db.refresh(post)
-
-    user = db.query(User).filter(User.id == post.userId).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    category = db.query(Category).filter(Category.id == post.category_id).first()
-
-    post.images = safe_load_images(post.images)
-
-    post_tags = safe_load_tags(post.tags)
-
-    user_info = UserInfo(
-        id=user.id,
-        name=user.name,
-        surname=user.surname,
-        phone=user.phone,
-        email=user.email,
-        avatarBase64=user.avatarBase64,
-        createdAt=user.createdAt.isoformat()
-    )
-
-    return PostResponse(
-        id=post.id,
-        title=post.title,
-        caption=post.caption,
-        price=post.price,
-        images=post.images,
-        tags=post_tags,
-        views=post.views,
-        isPromoted=post.isPromoted,
-        createdAt=post.createdAt.isoformat(),
-        is_scam=post.is_scam,
-        userId=post.userId,
-        user=user_info,
-        category_id=post.category_id,
-        category_name=category.name if category else None,
-        currency=post.currency,
-        location=post.location,
-        isUsed=post.isUsed
-    )
 
 @app.get("/reset-password-form", response_class=HTMLResponse)
 def reset_password_form(token: str):
@@ -788,6 +809,21 @@ async def create_post(
     if price < 0:
         raise HTTPException(status_code=400, detail="Price cannot be less than 0")
 
+    import re
+    if re.search(r"\d", title):
+        raise HTTPException(status_code=400, detail="Title cannot contain numbers")
+    if re.search(r"\d", caption):
+        raise HTTPException(status_code=400, detail="Caption cannot contain numbers")
+    if tags and re.search(r"\d", tags):
+        raise HTTPException(status_code=400, detail="Tags cannot contain numbers")
+
+    category = db.query(Category).filter(Category.id == category_id).first()
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+    
+    if not images or len(images) == 0:
+        raise HTTPException(status_code=400, detail="At least one product photo is required")
+    
     import base64
     import json
 

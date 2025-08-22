@@ -1,52 +1,52 @@
-version: "3.9"
+kname: Deploy to VM
 
-services:
-  app:
-    build: .
-    container_name: fastapi_app
-    restart: always
-    command: uvicorn main:app --host 0.0.0.0 --port 8000
-    volumes:
-      - .:/app
-    expose:
-      - "8000"
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
 
-  nginx:
-    image: nginx:alpine
-    container_name: nginx_proxy
-    restart: always
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/conf.d:/etc/nginx/conf.d
-      - ./certbot/www:/var/www/certbot
-      - ./certbot/conf:/etc/letsencrypt
-    depends_on:
-      - app
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
 
-  certbot_init:
-    image: certbot/certbot
-    container_name: certbot_init
-    volumes:
-      - ./certbot/www:/var/www/certbot
-      - ./certbot/conf:/etc/letsencrypt
-    command: certonly --webroot -w /var/www/certbot \
-             -d beez.pp.ua \
-             --email your@email.com \
-             --agree-tos \
-             --non-interactive
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
 
-  certbot:
-    image: certbot/certbot
-    container_name: certbot_renew
-    restart: unless-stopped
-    volumes:
-      - ./certbot/www:/var/www/certbot
-      - ./certbot/conf:/etc/letsencrypt
-    entrypoint: >
-      sh -c "trap exit TERM;
-             while :; do
-               certbot renew --webroot -w /var/www/certbot --quiet;
-               sleep 12h;
-             done"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euxo pipefail
+
+            APP_DIR="${{ secrets.APP_DIR }}"
+            REPO_URL="https://github.com/${{ github.repository }}.git"
+            BRANCH="main"
+
+            if [[ ! -d "$APP_DIR/.git" ]]; then
+              git clone --depth=1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+            else
+              cd "$APP_DIR"
+              git fetch --depth=1 origin "$BRANCH"
+              git reset --hard "origin/$BRANCH"
+            fi
+            cd "$APP_DIR"
+
+            printf "%s" "${{ secrets.APP_ENV }}" > .env
+            chmod 600 .env
+
+            docker-compose down
+            docker-compose up -d --build
+
+            docker-compose ps
+

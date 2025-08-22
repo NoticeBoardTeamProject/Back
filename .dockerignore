@@ -1,16 +1,25 @@
-# GitHub CI/CD
-.github
+# Git
 .git
-
-# Secrets
-.env
-certbot/
-*.db
+.github
 
 # Python cache
 __pycache__/
 *.pyc
 
+# Secrets
+.env
+*.db
+
+# Certbot
+certbot/
+
+# Docker-compose itself
+docker-compose.yml
+Dockerfile
+
+# Logs
+*.log
+log.txt
+
 # System dirs
 containerd/
-log.txt

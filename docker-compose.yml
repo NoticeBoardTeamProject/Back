@@ -37,6 +37,7 @@ jobs:
             cd "$APP_DIR"
 
             if [[ ! -d ".git" ]]; then
+              echo "No .git found, initializing repository..."
               git init
               git remote add origin "$REPO_URL" || true
             fi

@@ -23,6 +23,7 @@ from config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, SMTP_USER
 from database import get_db, Base, engine
 from database import Base, engine, get_db
 from utils import create_default_owner_and_categories
+from email_validator import validate_email, EmailNotValidError
 from models import (
     User, Post, Category, Review, Dialogue, Message, Complaint,
     FavoriteCategory, VerificationRequest
@@ -216,16 +217,44 @@ def get_favorite_categories(
 
 @app.post("/register", response_model=Token, tags=["User"])
 def register(user: UserCreate, db: Session = Depends(get_db)):
-    if db.query(User).filter_by(email=user.email).first():
-        raise HTTPException(status_code=400, detail="Email is already registered!")
+    try:
+        validate_email(user.email)
+    except EmailNotValidError:
+        raise HTTPException(status_code=400, detail="Invalid email format")
+    
+    import re
+    
+    existing_user = db.query(User).filter_by(email=user.email).first()
+    
+    if existing_user:
+        if existing_user.isEmailConfirmed:  
+            raise HTTPException(status_code=400, detail="Email is already registered!")
+        else:
+            token = create_access_token({"sub": existing_user.email})
+            send_verification_email(existing_user.email, token)
+            return {"access_token": token, "token_type": "bearer"}
+        
     if len(user.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    if not re.search(r"[A-Za-z]", user.password) or not re.search(r"\d", user.password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one letter and one number")
+    if not re.search(r"[A-Z]", user.password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one uppercase letter")
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", user.password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one special character")
+    
     if not (1 <= len(user.name) <= 50):
-        raise HTTPException(status_code=400, detail="Name must be between 1 and 50 characters.")
+        raise HTTPException(status_code=400, detail="Name must be between 1 and 50 characters")
+    if not re.match(r"^[A-Za-zА-Яа-я-]+$", user.name):
+        raise HTTPException(status_code=400, detail="Name must contain only letters and hyphens")
     if not (1 <= len(user.surname) <= 50):
-        raise HTTPException(status_code=400, detail="Surname must be between 1 and 50 characters.")
-    if not (9 <= len(user.phone) <= 15):
-        raise HTTPException(status_code=400, detail="Phone number must be between 9 and 15 characters.")
+        raise HTTPException(status_code=400, detail="Surname must be between 1 and 50 characters")
+    if not re.match(r"^[A-Za-zА-Яа-я-]+$", user.surname):
+        raise HTTPException(status_code=400, detail="Surname must contain only letters")
+    
+    phone_pattern = re.compile(r"^\+380\d{9}$")
+    if not phone_pattern.match(user.phone):
+        raise HTTPException(status_code=400, detail="Phone must be in format +380XXXXXXXXX")
     
     hashed_pw = hash_password(user.password)
     user_data = user.dict()
@@ -248,9 +277,23 @@ def create_complaint(
     current_user: User = Depends(get_current_user)
 ):
     if not complaint.post_id and not complaint.user_id:
-        raise HTTPException(status_code=400, detail="Either a post or a user must be specified.")
-
-    new_complaint = Complaint(
+        raise HTTPException(status_code=400, detail="Either a post or a user must be specified")
+    
+    if complaint.post_id:
+        post = db.query(Post).filter(Post.id == complaint.post_id).first()
+        if not post:
+            raise HTTPException(status_code=404, detail="Post not found")
+        if post.userId == current_user.id:
+            raise HTTPException(status_code=400, detail="You cannot complain about your own post")
+        
+    if complaint.user_id:
+        user = db.query(User).filter(User.id == complaint.user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        if complaint.user_id == current_user.id:
+            raise HTTPException(status_code=400, detail="You cannot complain about yourself")
+        
+    new_complaint = Complaint( 
         post_id=complaint.post_id,
         user_id=complaint.user_id,
         message=complaint.message
@@ -354,6 +397,22 @@ def update_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    import re
+
+    if not (1 <= len(data.name) <= 50):
+        raise HTTPException(status_code=400, detail="Name must be between 1 and 50 characters")
+    if not (1 <= len(data.surname) <= 50):
+        raise HTTPException(status_code=400, detail="Surname must be between 1 and 50 characters")
+    
+    if not re.match(r"^[A-Za-zА-Яа-я-]+$", data.name):
+        raise HTTPException(status_code=400, detail="Name must contain only letters and hyphens")
+    if not re.match(r"^[A-Za-zА-Яа-я-]+$", data.surname):
+        raise HTTPException(status_code=400, detail="Surname must contain only letters and hyphens")
+
+    phone_pattern = re.compile(r"^\+380\d{9}$")
+    if not phone_pattern.match(data.phone):
+        raise HTTPException(status_code=400, detail="Invalid phone format. Use +380XXXXXXXXX")
+    
     current_user.name = data.name
     current_user.surname = data.surname
     current_user.phone = data.phone
@@ -576,6 +635,14 @@ def create_review(
     seller = db.query(User).filter(User.id == sellerId).first()
     if not seller:
         raise HTTPException(status_code=404, detail="Seller not found")
+    
+    existing_review = (
+        db.query(Review)
+        .filter(Review.sellerId == sellerId, Review.authorId == current_user.id)
+        .first()
+    )
+    if existing_review:
+        raise HTTPException(status_code=400, detail="You already left a review for this seller")
     
     review = Review(
         sellerId=sellerId,

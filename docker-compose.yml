@@ -25,6 +25,18 @@ services:
     depends_on:
       - app
 
+  certbot_init:
+    image: certbot/certbot
+    container_name: certbot_init
+    volumes:
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+    command: certonly --webroot -w /var/www/certbot \
+             -d beez.pp.ua \
+             --email your@email.com \
+             --agree-tos \
+             --non-interactive
+
   certbot:
     image: certbot/certbot
     container_name: certbot_renew
@@ -38,4 +50,3 @@ services:
                certbot renew --webroot -w /var/www/certbot --quiet;
                sleep 12h;
              done"
-

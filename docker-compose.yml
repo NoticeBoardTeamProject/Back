@@ -33,27 +33,21 @@ jobs:
             REPO_URL="https://github.com/${{ github.repository }}.git"
             BRANCH="main"
 
-            sudo mkdir -p "$APP_DIR"
-            sudo chown -R "$USER:$USER" "$APP_DIR"
-
-            TMP_DIR="$(mktemp -d)"
-            git clone --depth=1 --branch "$BRANCH" "$REPO_URL" "$TMP_DIR"
-
-            rsync -a --delete \
-              --exclude '.git' \
-              --exclude 'certbot/conf/**' \
-              --exclude 'bulletin_board.db' \
-              "$TMP_DIR"/ "$APP_DIR"/
-
-            rm -rf "$TMP_DIR"
-
-            # Оновлюємо .env
-            printf "%s" "${{ secrets.APP_ENV }}" > "$APP_DIR/.env"
-            chmod 600 "$APP_DIR/.env"
-
+            mkdir -p "$APP_DIR"
             cd "$APP_DIR"
 
-            docker-compose build --pull
-            docker-compose up -d
+            if [[ ! -d ".git" ]]; then
+              git init
+              git remote add origin "$REPO_URL" || true
+            fi
+
+            git fetch --depth=1 origin "$BRANCH"
+            git checkout -B "$BRANCH" "origin/$BRANCH"
+
+            printf "%s" "${{ secrets.APP_ENV }}" > .env
+            chmod 600 .env
+
+            docker-compose down || true
+            docker-compose up -d --build
 
             docker-compose ps

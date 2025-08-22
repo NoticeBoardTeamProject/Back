@@ -37,6 +37,7 @@ jobs:
             sudo chown -R "$USER:$USER" "$APP_DIR"
 
             if [[ ! -d "$APP_DIR/.git" ]]; then
+              rm -rf "$APP_DIR"/*
               git clone --depth=1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
               cd "$APP_DIR"
             else

@@ -33,19 +33,22 @@ jobs:
             REPO_URL="https://github.com/${{ github.repository }}.git"
             BRANCH="main"
 
-            if [[ ! -d "$APP_DIR/.git" ]]; then
-              git clone --depth=1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
-            else
-              cd "$APP_DIR"
-              git fetch --depth=1 origin "$BRANCH"
-              git reset --hard "origin/$BRANCH"
-            fi
+            mkdir -p "$APP_DIR"
             cd "$APP_DIR"
+
+            if [[ ! -d ".git" ]]; then
+              echo "No .git found, initializing repository..."
+              git init
+              git remote add origin "$REPO_URL" || true
+            fi
+
+            git fetch --depth=1 origin "$BRANCH"
+            git checkout -B "$BRANCH" "origin/$BRANCH"
 
             printf "%s" "${{ secrets.APP_ENV }}" > .env
             chmod 600 .env
 
-            docker-compose down
+            docker-compose down || true
             docker-compose up -d --build
 
             docker-compose ps

@@ -1,52 +1,27 @@
-kname: Deploy to VM
+with:
+  host: ${{ secrets.SSH_HOST }}
+  port: ${{ secrets.SSH_PORT }}
+  username: ${{ secrets.SSH_USER }}
+  key: ${{ secrets.VM_SSH_KEY }}
+  script: |
+    set -euxo pipefail
+    APP_DIR="${{ secrets.APP_DIR }}"
+    REPO_URL="https://github.com/${{ github.repository }}.git"
+    BRANCH="main"
 
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch: {}
+    if [[ ! -d "$APP_DIR/.git" ]]; then
+      sudo rm -rf "$APP_DIR"
+      git clone --depth=1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+    else
+      cd "$APP_DIR"
+      git fetch --depth=1 origin "$BRANCH"
+      git reset --hard "origin/$BRANCH"
+    fi
+    cd "$APP_DIR"
 
-concurrency:
-  group: deploy-prod
-  cancel-in-progress: false
+    printf "%s" "${{ secrets.APP_ENV }}" > .env
+    chmod 600 .env
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          port: ${{ secrets.SSH_PORT }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          script_stop: true
-          script: |
-            set -euxo pipefail
-
-            APP_DIR="${{ secrets.APP_DIR }}"
-            REPO_URL="https://github.com/${{ github.repository }}.git"
-            BRANCH="main"
-
-            if [[ ! -d "$APP_DIR/.git" ]]; then
-              git clone --depth=1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
-            else
-              cd "$APP_DIR"
-              git fetch --depth=1 origin "$BRANCH"
-              git reset --hard "origin/$BRANCH"
-            fi
-            cd "$APP_DIR"
-
-            printf "%s" "${{ secrets.APP_ENV }}" > .env
-            chmod 600 .env
-
-            docker-compose down
-            docker-compose up -d --build
-
-            docker-compose ps
-
+    docker-compose down || true
+    docker-compose up -d --build
+    docker-compose ps

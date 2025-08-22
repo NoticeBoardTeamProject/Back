@@ -1,4 +1,71 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Request, Body, Header,Form,UploadFile, File, Query
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y gcc libpq-dev
+
+WORKDIR /app
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]SECRET_KEY = "supersecretkey"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
+SMTP_USER = "bodyaraz7@gmail.com"
+SMTP_PASS = "hqmmpdzlupuyvijl"
+DATABASE_URL = "sqlite:///./bulletin_board.db"
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+from config import DATABASE_URL
+
+DATABASE_URL = "sqlite:///./bulletin_board.db"
+
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+Base.metadata.create_all(bind=engine)
+
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fastapi_app
+    restart: always
+    expose:
+      - "8000"
+    networks:
+      - web
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx_proxy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+    networks:
+      - web
+
+networks:
+  web:
+    driver: bridgefrom fastapi import FastAPI, Depends, HTTPException, status, Request, Body, Header,Form,UploadFile, File, Query
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, constr, conint, Field
@@ -421,57 +488,6 @@ def get_blocked_users(db: Session = Depends(get_db), _: User = Depends(require_r
         })
     return result
 
-@app.get("/posts/{post_id}", response_model=PostResponse, tags=["Post"])
-def get_post(post_id: int, db: Session = Depends(get_db)):
-    post = db.query(Post).filter(Post.id == post_id, Post.isClosed == False).first()
-    if not post:
-        raise HTTPException(status_code=404, detail="No post found")
-
-    post.views = (post.views or 0) + 1
-    db.add(post)
-    db.commit()
-    db.refresh(post)
-
-    user = db.query(User).filter(User.id == post.userId).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    category = db.query(Category).filter(Category.id == post.category_id).first()
-
-    post.images = safe_load_images(post.images)
-
-    post_tags = safe_load_tags(post.tags)
-
-    user_info = UserInfo(
-        id=user.id,
-        name=user.name,
-        surname=user.surname,
-        phone=user.phone,
-        email=user.email,
-        avatarBase64=user.avatarBase64,
-        createdAt=user.createdAt.isoformat()
-    )
-
-    return PostResponse(
-        id=post.id,
-        title=post.title,
-        caption=post.caption,
-        price=post.price,
-        images=post.images,
-        tags=post_tags,
-        views=post.views,
-        isPromoted=post.isPromoted,
-        createdAt=post.createdAt.isoformat(),
-        is_scam=post.is_scam,
-        userId=post.userId,
-        user=user_info,
-        category_id=post.category_id,
-        category_name=category.name if category else None,
-        currency=post.currency,
-        location=post.location,
-        isUsed=post.isUsed
-    )
-
 @app.get("/my/posts", response_model=List[PostResponse], tags=["Post"])
 def get_my_posts(
     db: Session = Depends(get_db),
@@ -545,23 +561,6 @@ def close_ad(
 
     return {"message": f"Post {id} closed successfully", "reason": reason.value}
 
-@app.get("/reviews/{seller_id}", response_model=List[ReviewResponse], tags=["Reviews"])
-def get_reviews(seller_id: int, db: Session = Depends(get_db)):
-    reviews = db.query(Review).filter(Review.sellerId == seller_id).all()
-    if not reviews:
-        raise HTTPException(status_code=404, detail="No reviews found for this seller")
-    return reviews
-
-@app.get("/my/reviews", response_model=List[ReviewResponse], tags=["Reviews"])
-def get_my_received_reviews(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    reviews = db.query(Review).filter(Review.sellerId == current_user.id).all()
-    if not reviews:
-        raise HTTPException(status_code=404, detail="You have not received any reviews yet")
-    return reviews
-
 @app.post("/reviews", response_model=ReviewResponse, tags=["Reviews"])
 def create_review(
     sellerId: int = Form(...),
@@ -573,10 +572,6 @@ def create_review(
     if sellerId == current_user.id:
         raise HTTPException(status_code=400, detail="You cannot review yourself")
 
-    seller = db.query(User).filter(User.id == sellerId).first()
-    if not seller:
-        raise HTTPException(status_code=404, detail="Seller not found")
-    
     review = Review(
         sellerId=sellerId,
         authorId=current_user.id,
@@ -597,6 +592,57 @@ def create_review(
     db.commit()
 
     return review
+
+@app.get("/posts/{post_id}", response_model=PostResponse, tags=["Post"])
+def get_post(post_id: int, db: Session = Depends(get_db)):
+    post = db.query(Post).filter(Post.id == post_id, Post.isClosed == False).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="No post found")
+
+    post.views = (post.views or 0) + 1
+    db.add(post)
+    db.commit()
+    db.refresh(post)
+
+    user = db.query(User).filter(User.id == post.userId).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    category = db.query(Category).filter(Category.id == post.category_id).first()
+
+    post.images = safe_load_images(post.images)
+
+    post_tags = safe_load_tags(post.tags)
+
+    user_info = UserInfo(
+        id=user.id,
+        name=user.name,
+        surname=user.surname,
+        phone=user.phone,
+        email=user.email,
+        avatarBase64=user.avatarBase64,
+        createdAt=user.createdAt.isoformat()
+    )
+
+    return PostResponse(
+        id=post.id,
+        title=post.title,
+        caption=post.caption,
+        price=post.price,
+        images=post.images,
+        tags=post_tags,
+        views=post.views,
+        isPromoted=post.isPromoted,
+        createdAt=post.createdAt.isoformat(),
+        is_scam=post.is_scam,
+        userId=post.userId,
+        user=user_info,
+        category_id=post.category_id,
+        category_name=category.name if category else None,
+        currency=post.currency,
+        location=post.location,
+        isUsed=post.isUsed
+    )
 
 @app.get("/reset-password-form", response_class=HTMLResponse)
 def reset_password_form(token: str):
@@ -809,21 +855,6 @@ async def create_post(
     if price < 0:
         raise HTTPException(status_code=400, detail="Price cannot be less than 0")
 
-    import re
-    if re.search(r"\d", title):
-        raise HTTPException(status_code=400, detail="Title cannot contain numbers")
-    if re.search(r"\d", caption):
-        raise HTTPException(status_code=400, detail="Caption cannot contain numbers")
-    if tags and re.search(r"\d", tags):
-        raise HTTPException(status_code=400, detail="Tags cannot contain numbers")
-
-    category = db.query(Category).filter(Category.id == category_id).first()
-    if not category:
-        raise HTTPException(status_code=404, detail="Category not found")
-    
-    if not images or len(images) == 0:
-        raise HTTPException(status_code=400, detail="At least one product photo is required")
-    
     import base64
     import json
 
@@ -1046,4 +1077,752 @@ def delete_category(cat_id: int, db: Session = Depends(get_db), _: User = Depend
 Base.metadata.create_all(bind=engine)
 create_default_owner_and_categories()
 
+
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Enum as SQLEnum, Float
+from sqlalchemy.orm import relationship
+from datetime import datetime
+from enum import Enum, IntEnum
+from database import Base
+
+class CurrencyEnum(str, Enum):
+    UAH = "UAH"
+    EUR = "EUR"
+    USD = "USD"
+
+class CityEnum(str, Enum):
+    Kyiv = "Kyiv, Kyiv Oblast"
+    Kharkiv = "Kharkiv, Kharkiv Oblast"
+    Odesa = "Odesa, Odesa Oblast"
+    Dnipro = "Dnipro, Dnipropetrovsk Oblast"
+    Donetsk = "Donetsk, Donetsk Oblast"
+    Zaporizhzhia = "Zaporizhzhia, Zaporizhzhia Oblast"
+    Lviv = "Lviv, Lviv Oblast"
+    Kryvyi_Rih = "Kryvyi Rih, Dnipropetrovsk Oblast"
+    Mykolaiv = "Mykolaiv, Mykolaiv Oblast"
+    Mariupol = "Mariupol, Donetsk Oblast"
+    Luhansk = "Luhansk, Luhansk Oblast"
+    Vinnytsia = "Vinnytsia, Vinnytsia Oblast"
+    Makiivka = "Makiivka, Donetsk Oblast"
+    Sevastopol = "Sevastopol, Crimea"
+    Simferopol = "Simferopol, Crimea"
+    Kherson = "Kherson, Kherson Oblast"
+    Poltava = "Poltava, Poltava Oblast"
+    Chernihiv = "Chernihiv, Chernihiv Oblast"
+    Cherkasy = "Cherkasy, Cherkasy Oblast"
+    Sumy = "Sumy, Sumy Oblast"
+    Zhytomyr = "Zhytomyr, Zhytomyr Oblast"
+    Horlivka = "Horlivka, Donetsk Oblast"
+    Rivne = "Rivne, Rivne Oblast"
+    Kropyvnytskyi = "Kropyvnytskyi, Kirovohrad Oblast"
+    Kamianske = "Kamianske, Dnipropetrovsk Oblast"
+    Chernivtsi = "Chernivtsi, Chernivtsi Oblast"
+    Ternopil = "Ternopil, Ternopil Oblast"
+    Ivano_Frankivsk = "Ivano-Frankivsk, Ivano-Frankivsk Oblast"
+    Bila_Tserkva = "Bila Tserkva, Kyiv Oblast"
+    Melitopol = "Melitopol, Zaporizhzhia Oblast"
+    Kerch = "Kerch, Crimea"
+    Sloviansk = "Sloviansk, Donetsk Oblast"
+    Berdyansk = "Berdyansk, Zaporizhzhia Oblast"
+    Uzhhorod = "Uzhhorod, Zakarpattia Oblast"
+    Kramatorsk = "Kramatorsk, Donetsk Oblast"
+    Nizhyn = "Nizhyn, Chernihiv Oblast"
+    Fastiv = "Fastiv, Kyiv Oblast"
+
+class CloseReason(str, Enum):
+    sold = "sold"
+    not_relevant = "not_relevant"
+    mistake = "mistake"
+
+class RatingEnum(IntEnum):
+    one = 1
+    two = 2
+    three = 3
+    four = 4
+    five = 5
+
+class ScamStatus(str, Enum):
+    scam = "swindler"
+    not_scam = "no swindler"
+
+class VerificationStatus(str, Enum):
+    approved = "approved"
+    rejected = "rejected"
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String)
+    surname = Column(String)
+    phone = Column(String)
+    email = Column(String, unique=True)
+    password = Column(String)
+    isEmailConfirmed = Column(Boolean, default=False)
+    isVerified = Column(Boolean, default=False)
+    isBlocked = Column(Boolean, default=False)
+    blockReason = Column(String, nullable=True)
+    blockedAt = Column(DateTime, nullable=True)
+    role = Column(String, default="User")
+    socialLinks = Column(String)
+    avatarBase64 = Column(String)
+    createdAt = Column(DateTime, default=datetime.utcnow)
+    location = Column(String, nullable=True)
+    rating = Column(Float, nullable=True, default=0.0)
+    reviewsCount = Column(Integer, nullable=True, default=0)
+
+class Post(Base):
+    __tablename__ = "posts"
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String)
+    caption = Column(String)
+    price = Column(Integer)
+    images = Column(String)
+    tags = Column(String)
+    views = Column(Integer, default=0)
+    isPromoted = Column(Boolean, default=False)
+    createdAt = Column(DateTime, default=datetime.utcnow)
+    is_scam = Column(Boolean, default=None, nullable=True)
+    isUsed = Column(Boolean, nullable=False, default=False)  
+    currency = Column(SQLEnum(CurrencyEnum), nullable=False, default=CurrencyEnum.UAH)
+    location = Column(SQLEnum(CityEnum), nullable=False)
+    isClosed = Column(Boolean, default=False)
+    closeReason = Column(String, nullable=True)
+    userId = Column(Integer, ForeignKey("users.id"))
+    category_id = Column(Integer, ForeignKey("categories.id"))  
+    user = relationship("User")
+    category = relationship("Category")
+
+class Category(Base):
+    __tablename__ = "categories"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String)   
+
+class Admin(Base):
+    __tablename__ = "admins"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    can_block_users = Column(Boolean, default=True)
+    can_verify_posts = Column(Boolean, default=True)
+
+class Complaint(Base):
+    __tablename__ = "complaints"
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, ForeignKey("posts.id"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    message = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    user = relationship("User")
+    post = relationship("Post")
+
+class Review(Base):
+    __tablename__ = "reviews"
+    id = Column(Integer, primary_key=True, index=True)
+    sellerId = Column(Integer, ForeignKey("users.id"), nullable=False)
+    authorId = Column(Integer, ForeignKey("users.id"), nullable=False)
+    text = Column(Text, nullable=False)
+    rating = Column(Integer, nullable=False)
+    createdAt = Column(DateTime, default=datetime.utcnow)
+    seller = relationship("User", foreign_keys=[sellerId])
+    author = relationship("User", foreign_keys=[authorId])
+
+class FavoriteCategory(Base):
+    __tablename__ = "favorite_categories"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    category_id = Column(Integer, ForeignKey("categories.id"))
+    user = relationship("User")
+    category = relationship("Category")
+
+class Dialogue(Base):
+    __tablename__ = "dialogues"
+    id = Column(Integer, primary_key=True, index=True)
+    user_from = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_to = Column(Integer, ForeignKey("users.id"), nullable=False)
+    post_id = Column(Integer, ForeignKey("posts.id"), nullable=False)
+    user_from_rel = relationship("User", foreign_keys=[user_from])
+    user_to_rel = relationship("User", foreign_keys=[user_to])
+    post_rel = relationship("Post")
+
+class Message(Base):
+    __tablename__ = "messages"
+    id = Column(Integer, primary_key=True, index=True)
+    dialogue_id = Column(Integer, ForeignKey("dialogues.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    message = Column(String, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    dialogue = relationship("Dialogue", backref="messages")
+    user = relationship("User")
+
+class VerificationRequest(Base):
+    __tablename__ = "verification_requests"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True)
+    images = Column(String)
+    status = Column(String, default="pending")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    user = relationship("User")
+server {
+    listen 80;
+    server_name beez.pp.ua www.beez.pp.ua;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name beez.pp.ua www.beez.pp.ua;
+
+    ssl_certificate /etc/letsencrypt/live/beez.pp.ua/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/beez.pp.ua/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    location / {
+        proxy_pass http://app:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+python-jose[cryptography]
+passlib[bcrypt]
+email-validator
+python-multipart
+from pydantic import BaseModel, EmailStr, Field
+from typing import List, Optional, Annotated
+from datetime import datetime
+from enum import Enum, IntEnum
+from models import CurrencyEnum, CityEnum, ScamStatus, CloseReason, RatingEnum, VerificationStatus
+
+class UserCreate(BaseModel):
+    name: Annotated[str, Field(min_length=1, max_length=50)]
+    surname: Annotated[str, Field(min_length=1, max_length=50)]
+    phone: Annotated[str, Field(min_length=9, max_length=15, pattern=r'^[\d\-\+\(\) ]+$', example="+380671234567")]
+    email: EmailStr
+    password: Annotated[str, Field(min_length=8)]
+
+class UpdateProfile(BaseModel):
+    name: Annotated[str, Field(min_length=1, max_length=50)]
+    surname: Annotated[str, Field(min_length=1, max_length=50)]
+    phone: Annotated[str, Field(min_length=9, max_length=15, pattern=r'^[\d\-\+\(\) ]+$', example="+380671234567")]
+    avatarBase64: Optional[str] = None
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class LoginForm(BaseModel):
+    email: EmailStr
+    password: str
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+class PasswordReset(BaseModel):
+    token: str
+    new_password: str
+
+class PostCreate(BaseModel):
+    title: str
+    caption: str
+    price: int
+    images: str = ""
+    tags: List[str]
+    category_id: int
+    isUsed: bool
+    currency: CurrencyEnum
+
+class UserInfo(BaseModel):
+    id: int
+    name: str
+    surname: str
+    phone: Optional[str]
+    email: str
+    avatarBase64: Optional[str]
+    createdAt: str
+    
+    class Config:
+        orm_mode = True
+
+class PostResponse(BaseModel):
+    id: int
+    title: str
+    caption: str
+    price: int
+    images: List[str]
+    tags: List[str]
+    views: int
+    isPromoted: bool
+    createdAt: str
+    is_scam: Optional[bool]
+    userId: int
+    user: Optional[UserInfo] = None
+    category_id: int
+    category_name: Optional[str]
+    isUsed: bool
+    currency: CurrencyEnum
+    location: CityEnum
+    
+    class Config:
+        orm_mode = True
+
+class PostShortResponse(BaseModel):
+    id: int
+    title: str
+
+class CategoryCreate(BaseModel):
+    name: str
+
+class ComplaintCreate(BaseModel):
+    post_id: Optional[int] = None
+    user_id: Optional[int] = None
+    message: str
+
+class ComplaintResponse(BaseModel):
+    id: int
+    post_id: Optional[int]
+    user_id: Optional[int]
+    message: str
+    created_at: datetime
+    complained_user_name: Optional[str]
+    complained_user_surname: Optional[str]
+    complained_post_title: Optional[str]
+    
+    class Config:
+        orm_mode = True
+
+class BlockUserRequest(BaseModel):
+    isBlocked: bool
+    blockReason: Optional[str] = None
+
+class ReviewCreate(BaseModel):
+    sellerId: int
+    text: str
+    rating: Annotated[int, Field(ge=1, le=5)]
+
+class ReviewResponse(BaseModel):
+    id: int
+    sellerId: int
+    authorId: int
+    text: str
+    rating: int
+    createdAt: datetime
+    
+    class Config:
+        orm_mode = True
+
+class UserShortResponse(BaseModel):
+    id: int
+    nickname: str
+    avatarBase64: Optional[str] = None
+
+class MessageResponse(BaseModel):
+    id: int
+    dialogue_id: int
+    user_id: int
+    message: str
+    timestamp: datetime
+
+class DialogueSummaryResponse(BaseModel):
+    id: int
+    other_user: UserShortResponse
+    post: PostShortResponse
+    last_message: Optional[str]
+    last_message_time: Optional[datetime]
+
+class DialogueDetailResponse(BaseModel):
+    other_user: UserShortResponse
+    post: PostShortResponse
+    messages: List[MessageResponse]
+
+class SendMessageRequest(BaseModel):
+    other_user_id: int
+    post_id: int
+    message: str
+
+class SendMessageResponse(BaseModel):
+    success: bool
+    message_id: Optional[int]
+
+class VerificationRequestCreate(BaseModel):
+    images: List[str]
+
+class VerificationResponse(BaseModel):
+    id: int
+    user_id: int
+    email: str
+    name: Optional[str]
+    surname: Optional[str]
+    avatarBase64: Optional[str]
+    phone: Optional[str]
+    images: List[str]
+    status: str
+    created_at: datetime
+    
+    class Config:
+        orm_mode = True
+
+class VerificationUpdate(BaseModel):
+    status: VerificationStatus
+import json
+import jwt
+import smtplib
+from datetime import datetime, timedelta
+from typing import List
+
+from passlib.context import CryptContext
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+from models import User, Category, Post
+from main import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, get_db
+from config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, SMTP_USER, SMTP_PASS
+from database import get_db, SessionLocal, Base, engine
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
+
+def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def send_verification_email(email: str, token: str):
+    link = f"http://localhost:8000/verify-email?token={token}"
+
+    html_body = f"""
+    <!DOCTYPE html>
+    <html lang="uk">
+    <head>
+        <meta charset="UTF-8">
+        <title>Confirmation email</title>
+        <style>
+            body {{
+                background-color: #f4f4f4;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                margin: 0;
+                padding: 0;
+            }}
+            .container {{
+                max-width: 600px;
+                margin: 40px auto;
+                background-color: #ffffff;
+                border-radius: 10px;
+                padding: 30px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+                text-align: center;
+            }}
+            h2 {{
+                color: #333333;
+                margin-bottom: 20px;
+            }}
+            p {{
+                color: #555555;
+                line-height: 1.6;
+            }}
+            .button {{
+                display: inline-block;
+                padding: 12px 24px;
+                background-color: #4CAF50;
+                color: white;
+                text-decoration: none;
+                border-radius: 6px;
+                font-weight: bold;
+                margin-top: 20px;
+            }}
+            .footer {{
+                font-size: 13px;
+                color: #888888;
+                margin-top: 30px;
+            }}
+            .link-fallback {{
+                color: #4a90e2;
+                text-decoration: none;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h2>Confirmation email</h2>
+            <p>Thank you for registering in the service <strong>Bulletin Board</strong>.</p>
+            <p>Click the button below to activate your account:</p>
+            <a href="{link}" class="button">Confirm Email</a>
+            <p>Or <a href="{link}" class="link-fallback">click here</a>, if the button does not work.</p>
+            <div class="footer">
+                If you have not registered with us, simply ignore this email.
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "🔔 Confirmation Email"
+    msg["From"] = "Bulletin Board"
+    msg["To"] = email
+    msg.attach(MIMEText(html_body, "html"))
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(SMTP_USER, SMTP_PASS)
+        server.sendmail(SMTP_USER, email, msg.as_string())
+
+def send_password_reset_email(email: str, token: str):
+    link = f"http://localhost:8000/reset-password-form?token={token}"
+    
+    html_body = f"""
+    <!DOCTYPE html>
+    <html lang="uk">
+    <head>
+      <meta charset="UTF-8" />
+      <title>Password reset</title>
+      <style>
+        body {{
+          background-color: #f4f4f4;
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          margin: 0;
+          padding: 0;
+        }}
+        .email-container {{
+          max-width: 600px;
+          margin: 40px auto;
+          background-color: #ffffff;
+          border-radius: 10px;
+          padding: 30px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }}
+        h2 {{
+          color: #333333;
+          margin-bottom: 20px;
+        }}
+        p {{
+          color: #555555;
+          line-height: 1.6;
+        }}
+        .button {{
+          display: inline-block;
+          padding: 12px 24px;
+          background-color: #f44336;
+          color: white;
+          text-decoration: none;
+          border-radius: 6px;
+          font-weight: bold;
+          margin-top: 20px;
+        }}
+        .footer {{
+          font-size: 13px;
+          color: #888888;
+          margin-top: 30px;
+        }}
+        .link-fallback {{
+          word-break: break-word;
+          color: #4a90e2;
+        }}
+      </style>
+    </head>
+    <body>
+      <div class="email-container">
+        <h2>Password reset</h2>
+        <p>You received this email because you are trying to reset your account password.</p>
+        <p>To set a new password, click the button below:</p>
+        <a href="{link}" class="button">Reset password</a>
+        <p>Or <a href="{link}" class="link-fallback">click here</a>, if the button does not work.</p>
+        <div class="footer">
+          If you have not sent a password change request, simply ignore this email.
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "🔐 Password reset"
+    msg["From"] = "Bulletin Board"
+    msg["To"] = email
+    msg.attach(MIMEText(html_body, "html"))
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(SMTP_USER, SMTP_PASS)
+        server.sendmail(SMTP_USER, email, msg.as_string())
+
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email = payload.get("sub")
+        if email is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        user = db.query(User).filter(User.email == email).first()
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        return user
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+def require_role(allowed_roles: list[str]):
+    def role_checker(current_user: User = Depends(get_current_user)):
+        if current_user.role not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Access denied")
+        return current_user
+    return role_checker
+
+def safe_load_images(images_str: str):
+    if not images_str:
+        return []
+    try:
+        return json.loads(images_str)
+    except json.JSONDecodeError:
+        return []
+
+def send_new_post_email(to: str, post: Post) -> None:
+    link = f"http://localhost:8000/posts/{post.id}"
+    first_image = json.loads(post.images)[0] if post.images else None
+
+    html_body = f"""
+    <html>
+      <body style="background-color:#f9f9f9; padding:30px; font-family:Arial, sans-serif;">
+        <div style="max-width:600px; margin:auto; background-color:#ffffff; padding:20px; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+          <h2 style="text-align:center; color:#333333;">🔔 New post for you!</h2>
+          
+          {'<img src="data:image/jpeg;base64,' + first_image + '" style="max-width:100%; border-radius:8px; margin-bottom:15px;" />' if first_image else ''}
+
+          <h3 style="color:#007BFF; margin-bottom:5px;">{post.title}</h3>
+          <p style="color:#555555; font-size:15px; line-height:1.5;">{post.caption}</p>
+          <p style="font-size:16px; font-weight:bold; color:#000000;">Ціна: {post.price} грн</p>
+
+          <div style="text-align:center; margin-top:25px;">
+            <a href="{link}" style="background-color:#28a745; color:white; padding:12px 20px; border-radius:5px; text-decoration:none; font-size:16px;">View the post</a>
+          </div>
+
+          <hr style="margin-top:30px; border:none; border-top:1px solid #e0e0e0;" />
+          <p style="font-size:12px; color:#999999; text-align:center;">
+            You received this message because you are subscribed to new ads in your favorite categories.
+          </p>
+        </div>
+      </body>
+    </html>
+    """
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "New ad in your favorite category 📢"
+    msg["From"] = "Bulletin Board"
+    msg["To"] = to
+    msg.attach(MIMEText(html_body, "html"))
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(SMTP_USER, SMTP_PASS)
+        server.sendmail(SMTP_USER, to, msg.as_string())
+
+def safe_load_tags(tags_str: str):
+    if not tags_str:
+        return []
+    try:
+        return json.loads(tags_str)
+    except json.JSONDecodeError:
+        return [t.strip() for t in tags_str.split(",") if t.strip()]
+
+def create_default_owner_and_categories():
+    db = SessionLocal()
+    try:
+        user_count = db.query(User).count()
+        if user_count == 0:
+            owner = User(
+                name="Bodya",
+                surname="Raz",
+                phone="+380562323765",
+                email="Razum_ld54@student.itstep.org",
+                password=hash_password("123456789"),
+                role="Owner",
+                isVerified=True,
+                isEmailConfirmed=True
+            )
+            db.add(owner)
+            
+            admin = User(
+                name="Daniil",
+                surname="Shtyvola",
+                phone="+3802546848",
+                email="danyashtyvola@gmail.com",
+                password=hash_password("123456789"),
+                role="Admin",
+                isVerified=True,
+                isEmailConfirmed=True
+            )
+            db.add(admin)
+
+            user1 = User(
+                name="Patrick",
+                surname="Star",
+                phone="+3802347234794",
+                email="patrick_star2352@gmail.com",
+                password=hash_password("123456789"),
+                role="User",
+                isVerified=True,
+                isEmailConfirmed=True
+            )
+            db.add(user1)
+
+            user2 = User(
+                name="Sponge",
+                surname="Bob",
+                phone="+380732571617",
+                email="sponge_bober263@gmail.com",
+                password=hash_password("123456789"),
+                role="User",
+                isVerified=True,
+                isEmailConfirmed=True
+            )
+            db.add(user2)
+
+            user3 = User(
+                name="Asuka",
+                surname="Langley",
+                phone="+38047234717",
+                email="asuka_langley2135@gmail.com",
+                password=hash_password("123456789"),
+                role="User",
+                isEmailConfirmed=True
+            )
+            db.add(user3)
+
+            user4 = User(
+                name="Ayanami",
+                surname="Rei",
+                phone="+380439867134",
+                email="ayanami_rei23858@gmail.com",
+                password=hash_password("123456789"),
+                role="User",
+                isEmailConfirmed=True
+            )
+            db.add(user4)
+
+        categories = ["Toys", "Electronics", "Clothes", "Furniture"]
+        for cat_name in categories:
+            exists = db.query(Category).filter_by(name=cat_name).first()
+            if not exists:
+                new_cat = Category(name=cat_name)
+                db.add(new_cat)
+
+        db.commit()
+    finally:
+        db.close()
 

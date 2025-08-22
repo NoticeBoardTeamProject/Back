@@ -32,33 +32,20 @@ jobs:
             APP_DIR="${{ secrets.APP_DIR }}"
             REPO_URL="https://github.com/${{ github.repository }}.git"
             BRANCH="main"
-            DOMAIN="${{ secrets.DOMAIN }}"
-            SSL_EMAIL="${{ secrets.SSL_EMAIL }}"
 
-            sudo rm -rf "$APP_DIR"
-            sudo mkdir -p "$APP_DIR"
-            sudo chown -R "$USER:$USER" "$APP_DIR"
-
-            git clone --depth=1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+            if [[ ! -d "$APP_DIR/.git" ]]; then
+              git clone --depth=1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+            else
+              cd "$APP_DIR"
+              git fetch --depth=1 origin "$BRANCH"
+              git reset --hard "origin/$BRANCH"
+            fi
             cd "$APP_DIR"
 
             printf "%s" "${{ secrets.APP_ENV }}" > .env
             chmod 600 .env
 
-            docker-compose down -v || true
-            docker system prune -af || true
+            docker-compose down
             docker-compose up -d --build
-
-            if [ ! -f "$APP_DIR/certbot/conf/live/$DOMAIN/fullchain.pem" ]; then
-              mkdir -p "$APP_DIR/certbot/www" "$APP_DIR/certbot/conf"
-              docker run --rm \
-                -v "$APP_DIR/certbot/conf:/etc/letsencrypt" \
-                -v "$APP_DIR/certbot/www:/var/www/certbot" \
-                certbot/certbot certonly --webroot \
-                -w /var/www/certbot \
-                -d "$DOMAIN" \
-                --non-interactive --agree-tos -m "$SSL_EMAIL"
-              docker-compose restart nginx_proxy || true
-            fi
 
             docker-compose ps

@@ -1,15 +1,13 @@
 FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y gcc libpq-dev
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libpq-dev curl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY requirements.txt .
-
-RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir PyJWT \
-    && pip install --no-cache-dir --force-reinstall bcrypt==4.0.1
+COPY requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn","main:app","--host","0.0.0.0","--port","8000"]

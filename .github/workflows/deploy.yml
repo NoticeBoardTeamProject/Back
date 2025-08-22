@@ -27,7 +27,6 @@ jobs:
           key: ${{ secrets.VM_SSH_KEY }}
           script_stop: true
           script: |
-            set -euxo pipefail
 
             APP_DIR="${{ secrets.APP_DIR }}"
             REPO_URL="https://github.com/${{ github.repository }}.git"
@@ -37,7 +36,7 @@ jobs:
             sudo mkdir -p "$APP_DIR"
             sudo chown -R "$USER:$USER" "$APP_DIR"
 
-            if [ ! -d "$APP_DIR/.git" ]; then
+            if [[ ! -d "$APP_DIR/.git" ]]; then
               git clone --depth=1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
               cd "$APP_DIR"
             else

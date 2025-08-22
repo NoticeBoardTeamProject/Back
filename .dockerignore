@@ -1,6 +1,16 @@
+# GitHub CI/CD
 .github
 .git
+
+# Secrets
 .env
 certbot/
-__pycache__/
 *.db
+
+# Python cache
+__pycache__/
+*.pyc
+
+# System dirs
+containerd/
+log.txt

@@ -1,54 +1,31 @@
-name: Deploy to VM
+version: "3.8"
 
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch: {}
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fastapi_app
+    restart: always
+    expose:
+      - "8000"
+    networks:
+      - web
 
-concurrency:
-  group: deploy-prod
-  cancel-in-progress: false
+  nginx:
+    image: nginx:alpine
+    container_name: nginx_proxy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+    networks:
+      - web
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          port: ${{ secrets.SSH_PORT }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          script_stop: true
-          script: |
-            set -euxo pipefail
-
-            APP_DIR="${{ secrets.APP_DIR }}"
-            REPO_URL="https://github.com/${{ github.repository }}.git"
-            BRANCH="main"
-
-            mkdir -p "$APP_DIR"
-            cd "$APP_DIR"
-
-            if [[ ! -d ".git" ]]; then
-              echo "No .git found, initializing repository..."
-              git init
-              git remote add origin "$REPO_URL" || true
-            fi
-
-            git fetch --depth=1 origin "$BRANCH"
-            git checkout -B "$BRANCH" "origin/$BRANCH"
-
-            printf "%s" "${{ secrets.APP_ENV }}" > .env
-            chmod 600 .env
-
-            docker-compose down || true
-            docker-compose up -d --build
-
-            docker-compose ps
+networks:
+  web:
+    driver: bridge

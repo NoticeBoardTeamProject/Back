@@ -42,13 +42,17 @@ jobs:
             sudo mkdir -p "$APP_DIR"
             sudo chown -R "$USER:$USER" "$APP_DIR"
 
-            if [[ ! -d "$APP_DIR/.git" ]]; then
-              rm -rf "$APP_DIR"/*
+            if [ -z "$(ls -A "$APP_DIR")" ]; then
               git clone --depth=1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
             else
               cd "$APP_DIR"
-              git fetch --depth=1 origin "$BRANCH"
-              git reset --hard "origin/$BRANCH"
+              if [ -d ".git" ]; then
+                git fetch --depth=1 origin "$BRANCH"
+                git reset --hard "origin/$BRANCH"
+              else
+                rm -rf "$APP_DIR"/*
+                git clone --depth=1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+              fi
             fi
             cd "$APP_DIR"
 

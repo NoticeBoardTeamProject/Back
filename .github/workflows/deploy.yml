@@ -29,31 +29,13 @@ jobs:
           script: |
             set -euxo pipefail
 
-            if ! command -v jq &> /dev/null; then
-              sudo apt-get update
-              sudo apt-get install -y jq curl git
-            fi
-
             APP_DIR="${{ secrets.APP_DIR }}"
             REPO_URL="https://github.com/${{ github.repository }}.git"
             BRANCH="main"
             DOMAIN="${{ secrets.DOMAIN }}"
 
-            sudo mkdir -p "$APP_DIR"
-            sudo chown -R "$USER:$USER" "$APP_DIR"
-
-            if [ -z "$(ls -A "$APP_DIR")" ]; then
-              git clone --depth=1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
-            else
-              cd "$APP_DIR"
-              if [ -d ".git" ]; then
-                git fetch --depth=1 origin "$BRANCH"
-                git reset --hard "origin/$BRANCH"
-              else
-                rm -rf "$APP_DIR"/*
-                git clone --depth=1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
-              fi
-            fi
+            sudo rm -rf "$APP_DIR"
+            git clone --depth=1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
             cd "$APP_DIR"
 
             echo "${{ secrets.APP_ENV }}" > .env.tmp
@@ -89,4 +71,4 @@ jobs:
             fi
 
             curl -fsSL --max-time 10 "http://127.0.0.1" >/dev/null || \
-            curl -fsSL --max-time 10 "http://127.0.0.1/docs" >/dev/null
+              curl -fsSL --max-time 10 "http://127.0.0.1/docs" >/dev/null

@@ -1,0 +1,3 @@
+certbot/conf/
+certbot/www/
+bulletin_board.db

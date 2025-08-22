@@ -1,37 +1,88 @@
-name: Deploy
+name: Deploy to VM
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Set up SSH
-      uses: webfactory/ssh-agent@v0.9.0
-      with:
-        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euxo pipefail
 
-    - name: Add host to known_hosts
-      run: |
-        mkdir -p ~/.ssh
-        ssh-keyscan beez.pp.ua >> ~/.ssh/known_hosts
+            APP_DIR="${{ secrets.APP_DIR }}"
+            REPO_URL="https://github.com/${{ github.repository }}.git"
+            BRANCH="${{ github.ref_name }}"
+            DOMAIN="${{ secrets.DOMAIN }}"
+            LE_EMAIL="${{ secrets.LE_EMAIL }}"
 
-    - name: Sync files to VPS
-      run: |
-        rsync -avz --delete --exclude certbot/conf ./ azureuser@beez.pp.ua:/home/azureuser/Back
+            sudo mkdir -p "$APP_DIR"
+            sudo chown -R "$USER:$USER" "$APP_DIR"
 
-    - name: Restart Docker Compose on VPS
-      run: |
-        ssh azureuser@beez.pp.ua << 'EOF'
-          cd /home/azureuser/Back
-          docker compose down
-          docker compose up -d --build
-        EOF
+            if [ ! -d "$APP_DIR/.git" ]; then
+              git clone --depth=1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+            else
+              cd "$APP_DIR"
+              git fetch --depth=1 origin "$BRANCH"
+              git reset --hard "origin/$BRANCH"
+            fi
+
+            cd "$APP_DIR"
+
+            echo "${{ secrets.APP_ENV }}" > .env.tmp
+            mv .env.tmp .env
+            chmod 600 .env
+
+            docker compose config > /dev/null
+
+            # 4) Зупинка старого та чистий запуск
+            docker compose down -v || true
+            docker system prune -af || true
+            docker compose up -d --build
+
+            docker compose ps
+
+            BAD=$(docker compose ps --format json | jq -r '.[] | select(.State!="running") | .Service' || true)
+            if [ -n "$BAD" ]; then
+              echo "Some services are not running:"
+              echo "$BAD"
+              for SVC in $BAD; do
+                echo "---- logs: $SVC ----"
+                docker compose logs --no-color --tail=200 "$SVC" || true
+              done
+              exit 1
+            fi
+
+            if [ ! -f "$APP_DIR/certbot/conf/live/$DOMAIN/fullchain.pem" ]; then
+              mkdir -p "$APP_DIR/certbot/www" "$APP_DIR/certbot/conf"
+              docker run --rm \
+                -v "$APP_DIR/certbot/conf:/etc/letsencrypt" \
+                -v "$APP_DIR/certbot/www:/var/www/certbot" \
+                certbot/certbot certonly --webroot \
+                -w /var/www/certbot -d "$DOMAIN"
+              if [ -f "$APP_DIR/certbot/conf/live/$DOMAIN/fullchain.pem" ]; then
+                docker compose restart nginx
+              fi
+            fi
+
+            curl -fsSL --max-time 10 "http://127.0.0.1" >/dev/null || \
+              curl -fsSL --max-time 10 "http://127.0.0.1/docs" >/dev/null

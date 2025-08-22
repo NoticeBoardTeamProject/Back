@@ -33,6 +33,7 @@ jobs:
             REPO_URL="https://github.com/${{ github.repository }}.git"
             BRANCH="main"
             DOMAIN="${{ secrets.DOMAIN }}"
+            SSL_EMAIL="${{ secrets.SSL_EMAIL }}"
 
             sudo rm -rf "$APP_DIR"
             sudo mkdir -p "$APP_DIR"
@@ -41,15 +42,12 @@ jobs:
             git clone --depth=1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
             cd "$APP_DIR"
 
-            echo "${{ secrets.APP_ENV }}" > .env.tmp
-            mv .env.tmp .env
+            printf "%s" "${{ secrets.APP_ENV }}" > .env
             chmod 600 .env
 
             docker-compose down -v || true
             docker system prune -af || true
             docker-compose up -d --build
-
-            docker-compose ps
 
             if [ ! -f "$APP_DIR/certbot/conf/live/$DOMAIN/fullchain.pem" ]; then
               mkdir -p "$APP_DIR/certbot/www" "$APP_DIR/certbot/conf"
@@ -57,10 +55,10 @@ jobs:
                 -v "$APP_DIR/certbot/conf:/etc/letsencrypt" \
                 -v "$APP_DIR/certbot/www:/var/www/certbot" \
                 certbot/certbot certonly --webroot \
-                -w /var/www/certbot -d "$DOMAIN"
-              if [ -f "$APP_DIR/certbot/conf/live/$DOMAIN/fullchain.pem" ]; then
-                docker-compose restart nginx
-              fi
+                -w /var/www/certbot \
+                -d "$DOMAIN" \
+                --non-interactive --agree-tos -m "$SSL_EMAIL"
+              docker-compose restart nginx_proxy || true
             fi
 
-            curl -fsSL --max-time 10 "http://127.0.0.1" >/dev/null || \
+            docker-compose ps

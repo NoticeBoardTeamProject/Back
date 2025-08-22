@@ -35,6 +35,9 @@ jobs:
             DOMAIN="${{ secrets.DOMAIN }}"
 
             sudo rm -rf "$APP_DIR"
+            sudo mkdir -p "$APP_DIR"
+            sudo chown -R "$USER:$USER" "$APP_DIR"
+
             git clone --depth=1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
             cd "$APP_DIR"
 

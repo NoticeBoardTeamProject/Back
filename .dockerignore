@@ -13,13 +13,13 @@ __pycache__/
 # Certbot
 certbot/
 
-# Docker-compose itself
-docker-compose.yml
-Dockerfile
-
 # Logs
 *.log
 log.txt
 
 # System dirs
 containerd/
+
+# Docker files
+Dockerfile
+docker-compose.yml

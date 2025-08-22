@@ -1,25 +1,10 @@
-# Git
 .git
 .github
-
-# Python cache
 __pycache__/
 *.pyc
-
-# Secrets
 .env
 *.db
-
-# Certbot
 certbot/
-
-# Logs
 *.log
 log.txt
-
-# System dirs
 containerd/
-
-# Docker file
-./Dockerfile
-./docker-compose.yml

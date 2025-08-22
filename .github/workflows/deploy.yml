@@ -24,7 +24,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           port: ${{ secrets.SSH_PORT }}
           username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
+          key: ${{ secrets.VM_SSH_KEY }}
           script_stop: true
           script: |
             set -euxo pipefail

@@ -43,7 +43,7 @@ jobs:
             fi
 
             git fetch --depth=1 origin "$BRANCH"
-            git checkout -B "$BRANCH" "origin/$BRANCH"
+            git reset --hard "origin/$BRANCH"
 
             printf "%s" "${{ secrets.APP_ENV }}" > .env
             chmod 600 .env

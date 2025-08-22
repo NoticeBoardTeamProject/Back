@@ -27,26 +27,33 @@ jobs:
           key: ${{ secrets.VM_SSH_KEY }}
           script_stop: true
           script: |
-            set -euxo pipefail
+            set -uo pipefail
 
             APP_DIR="${{ secrets.APP_DIR }}"
             REPO_URL="https://github.com/${{ github.repository }}.git"
             BRANCH="main"
 
-            if [[ ! -d "$APP_DIR/.git" ]]; then
-              git clone --depth=1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
-            else
-              cd "$APP_DIR"
-              git fetch origin "$BRANCH"
-              git reset --hard "origin/$BRANCH"
-            fi
+            sudo mkdir -p "$APP_DIR"
+            sudo chown -R "$USER:$USER" "$APP_DIR"
+
+            TMP_DIR="$(mktemp -d)"
+            git clone --depth=1 --branch "$BRANCH" "$REPO_URL" "$TMP_DIR"
+
+            rsync -a --delete \
+              --exclude '.git' \
+              --exclude 'certbot/conf/**' \
+              --exclude 'bulletin_board.db' \
+              "$TMP_DIR"/ "$APP_DIR"/
+
+            rm -rf "$TMP_DIR"
+
+            printf "%s" "${{ secrets.APP_ENV }}" > "$APP_DIR/.env"
+            chmod 600 "$APP_DIR/.env"
 
             cd "$APP_DIR"
 
-            printf "%s" "${{ secrets.APP_ENV }}" > .env
-            chmod 600 .env
-
-            docker-compose down
-            docker-compose up -d --build
+            docker-compose pull || true
+            docker-compose build --pull
+            docker-compose up -d
 
             docker-compose ps

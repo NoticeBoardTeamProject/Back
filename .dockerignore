@@ -1,4 +1,6 @@
-certbot/conf
-certbot/www
-.git
 .github
+.git
+.env
+certbot/
+__pycache__/
+*.db

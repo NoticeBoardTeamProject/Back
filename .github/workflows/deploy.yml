@@ -50,5 +50,17 @@ jobs:
             docker-compose up -d --build
 
             docker-compose ps
-            BAD=$(docker-compose ps --format json | jq -r '.[] | select(.State!="running") | .Service' || true)
-            if [ -n "$BAD" ]; then
+
+            if [ ! -f "$APP_DIR/certbot/conf/live/$DOMAIN/fullchain.pem" ]; then
+              mkdir -p "$APP_DIR/certbot/www" "$APP_DIR/certbot/conf"
+              docker run --rm \
+                -v "$APP_DIR/certbot/conf:/etc/letsencrypt" \
+                -v "$APP_DIR/certbot/www:/var/www/certbot" \
+                certbot/certbot certonly --webroot \
+                -w /var/www/certbot -d "$DOMAIN"
+              if [ -f "$APP_DIR/certbot/conf/live/$DOMAIN/fullchain.pem" ]; then
+                docker-compose restart nginx
+              fi
+            fi
+
+            curl -fsSL --max-time 10 "http://127.0.0.1" >/dev/null || \

@@ -16,7 +16,7 @@ from email.mime.text import MIMEText
 
 from models import User, Category, Post
 from main import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, get_db
-from config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, SMTP_USER, SMTP_PASS
+from config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, SMTP_USER, SMTP_PASS, BASE_URL
 from database import get_db, SessionLocal, Base, engine
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -36,7 +36,7 @@ def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 def send_verification_email(email: str, token: str):
-    link = f"http://localhost:8000/verify-email?token={token}"
+    link = f"{BASE_URL}/verify-email?token={token}"
 
     html_body = f"""
     <!DOCTYPE html>
@@ -115,7 +115,7 @@ def send_verification_email(email: str, token: str):
         server.sendmail(SMTP_USER, email, msg.as_string())
 
 def send_password_reset_email(email: str, token: str):
-    link = f"http://localhost:8000/reset-password-form?token={token}"
+    link = f"{BASE_URL}/reset-password-form?token={token}"
     
     html_body = f"""
     <!DOCTYPE html>
@@ -224,29 +224,25 @@ def safe_load_images(images_str: str):
         return []
 
 def send_new_post_email(to: str, post: Post) -> None:
-    link = f"http://localhost:8000/posts/{post.id}"
+    link = f"{BASE_URL}/posts/{post.id}"
     first_image = json.loads(post.images)[0] if post.images else None
 
-    # Маппинг валют
     currency_map = {
         "UAH": "грн",
         "USD": "$",
         "EUR": "€"
     }
 
-    # Если нет валюты — ставим грн
     currency = currency_map.get(post.currency, post.currency or "грн")
 
-    # Состояние вещи
     condition = "Б/У" if post.isUsed else "Нове"
 
-    # Локация (Enum -> value, строка -> как есть, иначе "Не вказано")
     location = "Не вказано"
     if getattr(post, "location", None):
         try:
-            location = post.location.value  # если Enum
+            location = post.location.value  
         except AttributeError:
-            location = post.location        # если строка
+            location = post.location        
 
     html_body = f"""
     <html>

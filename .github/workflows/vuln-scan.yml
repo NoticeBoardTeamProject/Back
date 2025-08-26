@@ -8,23 +8,36 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       issues: write
+      contents: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
       - name: ZAP Full Scan - api.beez.pp.ua
+        id: zap_backend_scan 
         uses: zaproxy/action-full-scan@v0.8.0
         with:
           target: 'https://api.beez.pp.ua'
           issue_title: 'ZAP Full Scan Vulnerabilities (Backend)'
           token: ${{ secrets.GITHUB_TOKEN }}
-          artifact_name: 'zap-backend'
-      
+
+      - name: Upload ZAP Backend Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-backend-report
+          path: ${{ github.workspace }}/report_md.md
+          
       - name: ZAP Full Scan - beez.pp.ua
+        id: zap_frontend_scan
         uses: zaproxy/action-full-scan@v0.8.0
         with:
           target: 'https://beez.pp.ua'
           issue_title: 'ZAP Full Scan Vulnerabilities (Frontend)'
           token: ${{ secrets.GITHUB_TOKEN }}
-          artifact_name: 'zap-frontend'
+      
+      - name: Upload ZAP Frontend Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-frontend-report
+          path: ${{ github.workspace }}/report_md.md

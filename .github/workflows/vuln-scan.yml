@@ -1,4 +1,4 @@
-name: ZAP Vulnerability Scan
+name: VulnScan
 
 on:
   workflow_dispatch:

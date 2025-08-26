@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  zap_scan:
+  zapscan:
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -21,7 +21,6 @@ jobs:
           target: 'https://api.beez.pp.ua'
           issue_title: 'ZAP Full Scan Vulnerabilities (Backend)'
           token: ${{ secrets.GITHUB_TOKEN }}
-          upload_artifacts: false
 
       - name: Move Backend Reports
         run: |
@@ -43,7 +42,6 @@ jobs:
           target: 'https://beez.pp.ua'
           issue_title: 'ZAP Full Scan Vulnerabilities (Frontend)'
           token: ${{ secrets.GITHUB_TOKEN }}
-          upload_artifacts: false
 
       - name: Move Frontend Reports
         run: |

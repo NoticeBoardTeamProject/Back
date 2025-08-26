@@ -15,11 +15,11 @@ jobs:
         with:
           target: 'https://api.beez.pp.ua'
           issue_title: 'ZAP Full Scan Vulnerabilities (Backend)'
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.TOKEN_GITHUB }}
       
       - name: ZAP Full Scan - beez.pp.ua
         uses: zaproxy/action-full-scan@v0.8.0
         with:
           target: 'https://beez.pp.ua'
           issue_title: 'ZAP Full Scan Vulnerabilities (Frontend)'
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.TOKEN_GITHUB }}

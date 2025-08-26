@@ -21,16 +21,20 @@ jobs:
           target: 'https://api.beez.pp.ua'
           issue_title: 'ZAP Full Scan Vulnerabilities (Backend)'
           token: ${{ secrets.GITHUB_TOKEN }}
-          artifact_name: zapBackendReports
+          upload_artifacts: false
+
+      - name: Move Backend Reports
+        run: |
+          mkdir -p reports/backend
+          mv report_json.json reports/backend/
+          mv report_md.md reports/backend/
+          mv report_html.html reports/backend/
 
       - name: Upload ZAP Backend Reports
         uses: actions/upload-artifact@v4
         with:
-          name: zapBackendReports
-          path: |
-            ${{ github.workspace }}/report_json.json
-            ${{ github.workspace }}/report_md.md
-            ${{ github.workspace }}/report_html.html
+          name: zap-backend-reports
+          path: reports/backend/
 
       - name: ZAP Full Scan - beez.pp.ua
         id: zap_frontend_scan
@@ -39,13 +43,17 @@ jobs:
           target: 'https://beez.pp.ua'
           issue_title: 'ZAP Full Scan Vulnerabilities (Frontend)'
           token: ${{ secrets.GITHUB_TOKEN }}
-          artifact_name: zapFrontendReports
+          upload_artifacts: false
+
+      - name: Move Frontend Reports
+        run: |
+          mkdir -p reports/frontend
+          mv report_json.json reports/frontend/
+          mv report_md.md reports/frontend/
+          mv report_html.html reports/frontend/
 
       - name: Upload ZAP Frontend Reports
         uses: actions/upload-artifact@v4
         with:
-          name: zapFrontendReports
-          path: |
-            ${{ github.workspace }}/report_json.json
-            ${{ github.workspace }}/report_md.md
-            ${{ github.workspace }}/report_html.html
+          name: zap-frontend-reports
+          path: reports/frontend/

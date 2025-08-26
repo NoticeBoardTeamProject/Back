@@ -1,0 +1,25 @@
+name: ZAP Vulnerability Scan
+
+on:
+  workflow_dispatch:
+
+jobs:
+  zap_scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: ZAP Full Scan - api.beez.pp.ua
+        uses: zaproxy/action-full-scan@v0.8.0
+        with:
+          target: 'https://api.beez.pp.ua'
+          issue_title: 'ZAP Full Scan Vulnerabilities (Backend)'
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: ZAP Full Scan - beez.pp.ua
+        uses: zaproxy/action-full-scan@v0.8.0
+        with:
+          target: 'https://beez.pp.ua'
+          issue_title: 'ZAP Full Scan Vulnerabilities (Frontend)'
+          token: ${{ secrets.GITHUB_TOKEN }}

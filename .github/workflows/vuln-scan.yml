@@ -1,4 +1,4 @@
-name: ZAP Vulnerability Scan
+name: vuln-scan
 
 on:
   workflow_dispatch:
@@ -11,23 +11,13 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v3
+
       - name: ZAP Full Scan Backend
         uses: zaproxy/action-full-scan@v0.9.0
         with:
           target: 'https://api.beez.pp.ua'
           issue_title: 'ZAP Backend Scan'
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Move Reports
-        run: |
-          mkdir -p reports/backend
-          mv report_json.json reports/backend/
-          mv report_md.md reports/backend/
-          mv report_html.html reports/backend/
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: zap-backend-reports
-          path: reports/backend/
 
   zap-frontend:
     runs-on: ubuntu-latest
@@ -36,24 +26,10 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v3
+
       - name: ZAP Full Scan Frontend
         uses: zaproxy/action-full-scan@v0.9.0
         with:
           target: 'https://beez.pp.ua'
           issue_title: 'ZAP Frontend Scan'
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Move Reports
-        run: |
-          mkdir -p reports/frontend
-          mv report_json.json reports/frontend/
-          mv report_md.md reports/frontend/
-          mv report_html.html reports/frontend/
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: zap-frontend-reports
-          path: reports/frontend/
-
-        with:
-          name: zap-frontend-reports
-          path: reports/frontend/

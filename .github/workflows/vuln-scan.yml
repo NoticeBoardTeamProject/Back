@@ -4,54 +4,56 @@ on:
   workflow_dispatch:
 
 jobs:
-  zapscan:
+  zap-backend:
     runs-on: ubuntu-latest
     permissions:
       issues: write
       contents: write
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: ZAP Full Scan - api.beez.pp.ua
-        id: zap_backend_scan
+      - uses: actions/checkout@v3
+      - name: ZAP Full Scan Backend
         uses: zaproxy/action-full-scan@v0.9.0
         with:
           target: 'https://api.beez.pp.ua'
-          issue_title: 'ZAP Full Scan Vulnerabilities (Backend)'
+          issue_title: 'ZAP Backend Scan'
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Move Backend Reports
+      - name: Move Reports
         run: |
           mkdir -p reports/backend
           mv report_json.json reports/backend/
           mv report_md.md reports/backend/
           mv report_html.html reports/backend/
-
-      - name: Upload ZAP Backend Reports
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: zap-backend-reports
           path: reports/backend/
 
-      - name: ZAP Full Scan - beez.pp.ua
-        id: zap_frontend_scan
+  zap-frontend:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v3
+      - name: ZAP Full Scan Frontend
         uses: zaproxy/action-full-scan@v0.9.0
         with:
           target: 'https://beez.pp.ua'
-          issue_title: 'ZAP Full Scan Vulnerabilities (Frontend)'
+          issue_title: 'ZAP Frontend Scan'
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Move Frontend Reports
+      - name: Move Reports
         run: |
           mkdir -p reports/frontend
           mv report_json.json reports/frontend/
           mv report_md.md reports/frontend/
           mv report_html.html reports/frontend/
-
-      - name: Upload ZAP Frontend Reports
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
+        with:
+          name: zap-frontend-reports
+          path: reports/frontend/
+
         with:
           name: zap-frontend-reports
           path: reports/frontend/

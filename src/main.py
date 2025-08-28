@@ -388,7 +388,12 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     if user.isBlocked:
         raise HTTPException(status_code=403, detail=f"User is blocked. Reason: {user.blockReason or 'not specified'}")
 
-    token = create_access_token(data={"sub": user.email})
+    token = create_access_token(
+        data={
+            "sub": user.email,
+            "role": user.role
+        }
+    )
 
     return {"access_token": token, "token_type": "bearer"}
 

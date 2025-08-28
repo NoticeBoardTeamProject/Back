@@ -51,7 +51,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173", 
-        "https://noticeboardteamproject.github.io"
+        "https://noticeboardteamproject.github.io",
+        "https://beez.pp.ua"
     ],
     allow_credentials=True,
     allow_methods=["*"],

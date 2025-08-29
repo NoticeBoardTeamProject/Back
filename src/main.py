@@ -514,7 +514,6 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
     category = db.query(Category).filter(Category.id == post.category_id).first()
 
     post.images = safe_load_images(post.images)
-
     post_tags = safe_load_tags(post.tags)
 
     user_info = UserInfo(
@@ -524,7 +523,9 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
         phone=user.phone,
         email=user.email,
         avatarBase64=user.avatarBase64,
-        createdAt=user.createdAt.isoformat()
+        createdAt=user.createdAt.isoformat() if user.createdAt else None,
+        rating=user.rating or 0.0,
+        reviewsCount=user.reviewsCount or 0
     )
 
     return PostResponse(
@@ -536,7 +537,7 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
         tags=post_tags,
         views=post.views,
         isPromoted=post.isPromoted,
-        createdAt=post.createdAt.isoformat(),
+        createdAt=post.createdAt.isoformat() if post.createdAt else None,
         is_scam=post.is_scam,
         userId=post.userId,
         user=user_info,
@@ -559,9 +560,6 @@ def get_my_posts(
         .all()
     )
 
-    if not posts:
-        raise HTTPException(status_code=404, detail="You don't have any posts")
-
     result = []
     for post in posts:
         category = db.query(Category).filter(Category.id == post.category_id).first()
@@ -575,7 +573,7 @@ def get_my_posts(
             tags=safe_load_tags(post.tags),
             views=post.views,
             isPromoted=post.isPromoted,
-            createdAt=post.createdAt.isoformat(),
+            createdAt=post.createdAt.isoformat() if post.createdAt else None,
             is_scam=post.is_scam,
             userId=post.userId,
             category_id=post.category_id,

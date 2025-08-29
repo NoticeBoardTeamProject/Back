@@ -179,7 +179,7 @@ class PostOut(BaseModel):
     id: int
     title: str
     caption: Optional[str] = None
-    created_at: Optional[datetime] = None
+    createdAt: Optional[datetime] = None
     views: Optional[int] = 0
 
     class Config:

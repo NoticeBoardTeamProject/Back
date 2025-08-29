@@ -16,7 +16,7 @@ from email.mime.text import MIMEText
 
 from models import User, Category, Post
 from main import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, get_db
-from config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, SMTP_USER, SMTP_PASS, BASE_URL,FRONT_URL
+from config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, SMTP_USER, SMTP_PASS, BASE_URL
 from database import get_db, SessionLocal, Base, engine
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -224,7 +224,7 @@ def safe_load_images(images_str: str):
         return []
 
 def send_new_post_email(to: str, post: Post) -> None:
-    link = f"{FRONT_URL}/posts/{post.id}"
+    link = f"{BASE_URL}/posts/{post.id}"
     first_image = json.loads(post.images)[0] if post.images else None
 
     currency_map = {

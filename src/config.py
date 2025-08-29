@@ -8,4 +8,3 @@ SMTP_PASS = "hqmmpdzlupuyvijl"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))  
 DATABASE_URL = f"sqlite:///{os.path.join(BASE_DIR, 'bulletin_board.db')}"
 BASE_URL = "https://api.beez.pp.ua"
-FRONT_URL = "https://beez.pp.ua"

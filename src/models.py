@@ -88,6 +88,8 @@ class User(Base):
     location = Column(String, nullable=True)
     rating = Column(Float, nullable=True, default=0.0)
     reviewsCount = Column(Integer, nullable=True, default=0)
+    
+    posts = relationship("Post", back_populates="user")
 
 class Post(Base):
     __tablename__ = "posts"
@@ -108,7 +110,7 @@ class Post(Base):
     closeReason = Column(String, nullable=True)
     userId = Column(Integer, ForeignKey("users.id"))
     category_id = Column(Integer, ForeignKey("categories.id"))  
-    user = relationship("User")
+    user = relationship("User", back_populates="posts")
     category = relationship("Category")
 
 class Category(Base):

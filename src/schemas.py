@@ -174,3 +174,33 @@ class VerificationResponse(BaseModel):
 
 class VerificationUpdate(BaseModel):
     status: VerificationStatus
+
+class PostOut(BaseModel):
+    id: int
+    title: str
+    caption: Optional[str] = None
+    created_at: Optional[datetime] = None
+    views: Optional[int] = 0
+
+    class Config:
+        orm_mode = True
+
+class UserWithPosts(BaseModel):
+    id: int
+    name: str
+    surname: str
+    phone: Optional[str] = None
+    email: str
+    isVerified: bool
+    isBlocked: bool
+    blockReason: Optional[str] = None
+    blockedAt: Optional[datetime] = None
+    role: str
+    createdAt: Optional[datetime] = None
+    location: Optional[str] = None
+    rating: Optional[float] = None
+    reviewsCount: Optional[int] = 0
+    posts: List[PostOut] = []
+
+    class Config:
+        orm_mode = True

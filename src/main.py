@@ -24,6 +24,7 @@ from database import get_db, Base, engine
 from database import Base, engine, get_db
 from utils import create_default_owner_and_categories
 from email_validator import validate_email, EmailNotValidError
+from sqlalchemy.orm import selectinload
 from models import (
     User, Post, Category, Review, Dialogue, Message, Complaint,
     FavoriteCategory, VerificationRequest
@@ -33,7 +34,7 @@ from schemas import (
     ReviewResponse, DialogueSummaryResponse, DialogueDetailResponse, UserShortResponse,
     MessageResponse, SendMessageRequest, SendMessageResponse, ComplaintResponse, UserInfo,
     BlockUserRequest, UpdateProfile,PasswordResetRequest, VerificationResponse, VerificationUpdate,
-    CloseReason, RatingEnum, CurrencyEnum, CityEnum, ScamStatus, VerificationStatus
+    CloseReason, RatingEnum, CurrencyEnum, CityEnum, ScamStatus, VerificationStatus,UserWithPosts
 )
 from utils import (
     hash_password, verify_password, create_access_token, get_current_user,
@@ -143,6 +144,15 @@ def get_verification_requests(
             created_at=r.created_at
         ) for r in requests
     ]
+
+@app.get("/users-with-posts", response_model=List[UserWithPosts], tags=["Admin"])
+def get_users_with_posts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["Admin", "Owner"]))
+):
+    users = db.query(User).options(selectinload(User.posts)).all()
+    return users
+
 
 @app.get("/chat/with/{other_user_id}", response_model=DialogueDetailResponse, tags=["User"])
 def get_conversation(

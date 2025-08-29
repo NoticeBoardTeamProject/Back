@@ -462,7 +462,7 @@ def search_posts(
         if category:
             query = query.filter(Post.category_id == category.id)
         else:
-            raise HTTPException(status_code=404, detail="Category not found")
+            return []
     if tags:
         tag_list = [tag.strip().lower() for tag in tags.split(",")]
         for tag in tag_list:
@@ -471,11 +471,11 @@ def search_posts(
     results = query.all()
 
     if not results:
-        raise HTTPException(status_code=404, detail="No post found with the specified parameters")
+        return []
 
     for post in results:
         post.images = safe_load_images(post.images)
-        post.tags = safe_load_tags(post.tags)  
+        post.tags = safe_load_tags(post.tags)
 
     return results
 
@@ -591,8 +591,10 @@ def get_posts(db: Session = Depends(get_db)):
               .filter(Post.isClosed == False)\
               .order_by(Post.createdAt.desc())\
               .all()
+
     if not posts:
-        raise HTTPException(status_code=404, detail="There are no posts yet") 
+        return []
+
     for post in posts:
         post.images = safe_load_images(post.images)
         post.tags = safe_load_tags(post.tags)

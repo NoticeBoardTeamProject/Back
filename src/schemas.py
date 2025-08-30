@@ -50,6 +50,8 @@ class UserInfo(BaseModel):
     email: str
     avatarBase64: Optional[str]
     createdAt: str
+    rating: float = 0.0
+    reviewsCount: int = 0
     
     class Config:
         orm_mode = True

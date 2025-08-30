@@ -298,9 +298,9 @@ def create_default_owner_and_categories():
         if user_count == 0:
             owner = User(
                 name="Bodya",
-                surname="Raz",
+                surname="Razumeyko",
                 phone="+380562323765",
-                email="Razum_ld54@student.itstep.org",
+                email="razum_ld54@gmail.com",
                 password=hash_password("123456789"),
                 role="Owner",
                 isVerified=True,
@@ -311,7 +311,7 @@ def create_default_owner_and_categories():
             admin = User(
                 name="Daniil",
                 surname="Shtyvola",
-                phone="+3802546848",
+                phone="+380676839059",
                 email="danyashtyvola@gmail.com",
                 password=hash_password("123456789"),
                 role="Admin",
@@ -321,10 +321,10 @@ def create_default_owner_and_categories():
             db.add(admin)
 
             user1 = User(
-                name="Patrick",
-                surname="Star",
-                phone="+3802347234794",
-                email="patrick_star2352@gmail.com",
+                name="Goku",
+                surname="Son",
+                phone="+380637583069",
+                email="goku_son2352@gmail.com",
                 password=hash_password("123456789"),
                 role="User",
                 isVerified=True,
@@ -333,10 +333,10 @@ def create_default_owner_and_categories():
             db.add(user1)
 
             user2 = User(
-                name="Sponge",
-                surname="Bob",
-                phone="+380732571617",
-                email="sponge_bober263@gmail.com",
+                name="Vegeta",
+                surname="Prince",
+                phone="+380678504931",
+                email="super_saiyan263@gmail.com",
                 password=hash_password("123456789"),
                 role="User",
                 isVerified=True,
@@ -347,7 +347,7 @@ def create_default_owner_and_categories():
             user3 = User(
                 name="Asuka",
                 surname="Langley",
-                phone="+38047234717",
+                phone="+380678593015",
                 email="asuka_langley2135@gmail.com",
                 password=hash_password("123456789"),
                 role="User",
@@ -358,7 +358,7 @@ def create_default_owner_and_categories():
             user4 = User(
                 name="Ayanami",
                 surname="Rei",
-                phone="+380439867134",
+                phone="+380677641043",
                 email="ayanami_rei23858@gmail.com",
                 password=hash_password("123456789"),
                 role="User",
@@ -366,7 +366,20 @@ def create_default_owner_and_categories():
             )
             db.add(user4)
 
-        categories = ["Toys", "Electronics", "Clothes", "Furniture"]
+        categories = [
+            "Toys", 
+            "Electronics", 
+            "Clothes", 
+            "Furniture", 
+            "Books", 
+            "Sports", 
+            "Health", 
+            "Automotive", 
+            "Outdoors", 
+            "Instruments",
+            "Animals"
+        ]
+
         for cat_name in categories:
             exists = db.query(Category).filter_by(name=cat_name).first()
             if not exists:

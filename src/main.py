@@ -578,6 +578,8 @@ def get_my_posts(
             userId=post.userId,
             category_id=post.category_id,
             category_name=category.name if category else None,
+            isClosed=post.isClosed,
+            closeReason=post.closeReason,
             isUsed=post.isUsed,            
             currency=post.currency,       
             location=post.location 
@@ -632,25 +634,26 @@ def get_my_rating(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    reviews = db.query(Review).filter(Review.sellerId == current_user.id).all()
+    reviews = (
+        db.query(Review)
+        .filter(Review.sellerId == current_user.id)
+        .order_by(Review.createdAt.desc())
+        .limit(10)
+        .all()
+    )
 
-    review_dicts = [
-        {
-            "id": r.id,
-            "sellerId": r.sellerId,
-            "authorId": r.authorId,
-            "text": r.text,
-            "rating": r.rating,
-            "createdAt": r.createdAt
-        }
-        for r in reviews
+    review_models: List[ReviewResponse] = [
+        ReviewResponse.model_validate(r, from_attributes=True) for r in reviews
     ]
 
-    return {
-        "reviews": review_dicts,
-        "rating": current_user.rating or 0.0,
-        "reviewsCount": current_user.reviewsCount or 0
-    }
+    posts_count = db.query(Post).filter(Post.userId == current_user.id).count()
+
+    return ReviewsWithStatsResponse(
+        reviews=review_models,
+        rating=current_user.rating or 0.0,
+        reviewsCount=current_user.reviewsCount or 0,
+        postsCount=posts_count
+    )
 
 @app.post("/reviews", response_model=ReviewResponse, tags=["Reviews"])
 def create_review(

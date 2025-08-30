@@ -72,6 +72,8 @@ class PostResponse(BaseModel):
     category_id: int
     category_name: Optional[str]
     isUsed: bool
+    isClosed: bool = False
+    ccloseReason: Optional[str] = None
     currency: CurrencyEnum
     location: CityEnum
     
@@ -119,7 +121,7 @@ class ReviewResponse(BaseModel):
     text: str
     rating: int
     createdAt: datetime
-    
+
     class Config:
         orm_mode = True
 
@@ -207,10 +209,12 @@ class UserWithPosts(BaseModel):
     class Config:
         orm_mode = True
 
+
 class ReviewsWithStatsResponse(BaseModel):
     reviews: List[ReviewResponse]
     rating: float
     reviewsCount: int
+    postsCount: int
 
     class Config:
         orm_mode = True

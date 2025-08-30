@@ -634,11 +634,23 @@ def get_my_rating(
 ):
     reviews = db.query(Review).filter(Review.sellerId == current_user.id).all()
 
-    return ReviewsWithStatsResponse(
-        reviews=[ReviewResponse.from_orm(r) for r in reviews],
-        rating=current_user.rating or 0.0,
-        reviewsCount=current_user.reviewsCount or 0
-    )
+    review_dicts = [
+        {
+            "id": r.id,
+            "sellerId": r.sellerId,
+            "authorId": r.authorId,
+            "text": r.text,
+            "rating": r.rating,
+            "createdAt": r.createdAt
+        }
+        for r in reviews
+    ]
+
+    return {
+        "reviews": review_dicts,
+        "rating": current_user.rating or 0.0,
+        "reviewsCount": current_user.reviewsCount or 0
+    }
 
 @app.post("/reviews", response_model=ReviewResponse, tags=["Reviews"])
 def create_review(

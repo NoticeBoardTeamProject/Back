@@ -206,3 +206,11 @@ class UserWithPosts(BaseModel):
 
     class Config:
         orm_mode = True
+
+class ReviewsWithStatsResponse(BaseModel):
+    reviews: List[ReviewResponse]
+    rating: float
+    reviewsCount: int
+
+    class Config:
+        orm_mode = True

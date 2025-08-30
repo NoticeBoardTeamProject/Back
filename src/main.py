@@ -627,15 +627,18 @@ def get_reviews(seller_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="No reviews found for this seller")
     return reviews
 
-@app.get("/my/reviews", response_model=List[ReviewResponse], tags=["Reviews"])
-def get_my_received_reviews(
+@app.get("/my/rating", response_model=ReviewsWithStatsResponse, tags=["Reviews"])
+def get_my_rating(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     reviews = db.query(Review).filter(Review.sellerId == current_user.id).all()
-    if not reviews:
-        raise HTTPException(status_code=404, detail="You have not received any reviews yet")
-    return reviews
+
+    return ReviewsWithStatsResponse(
+        reviews=reviews,
+        rating=current_user.rating or 0.0,
+        reviewsCount=current_user.reviewsCount or 0
+    )
 
 @app.post("/reviews", response_model=ReviewResponse, tags=["Reviews"])
 def create_review(

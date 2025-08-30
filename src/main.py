@@ -627,8 +627,8 @@ def get_reviews(seller_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="No reviews found for this seller")
     return reviews
 
-@app.get("/my/rating", response_model=ReviewsWithStatsResponse, tags=["Reviews"])
-def get_my_rating(
+@app.get("/my/reviews", response_model=ReviewsWithStatsResponse, tags=["Reviews"])
+def get_my_received_reviews(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

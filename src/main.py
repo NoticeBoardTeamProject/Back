@@ -34,7 +34,7 @@ from schemas import (
     ReviewResponse, DialogueSummaryResponse, DialogueDetailResponse, UserShortResponse,
     MessageResponse, SendMessageRequest, SendMessageResponse, ComplaintResponse, UserInfo,
     BlockUserRequest, UpdateProfile,PasswordResetRequest, VerificationResponse, VerificationUpdate,
-    CloseReason, RatingEnum, CurrencyEnum, CityEnum, ScamStatus, VerificationStatus,UserWithPosts
+    CloseReason, RatingEnum, CurrencyEnum, CityEnum, ScamStatus, VerificationStatus,UserWithPosts, ReviewsWithStatsResponse
 )
 from utils import (
     hash_password, verify_password, create_access_token, get_current_user,
@@ -627,8 +627,8 @@ def get_reviews(seller_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="No reviews found for this seller")
     return reviews
 
-@app.get("/my/reviews", response_model=ReviewsWithStatsResponse, tags=["Reviews"])
-def get_my_received_reviews(
+@app.get("/my/rating", response_model=ReviewsWithStatsResponse, tags=["Reviews"])
+def get_my_rating(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

@@ -635,7 +635,7 @@ def get_my_rating(
     reviews = db.query(Review).filter(Review.sellerId == current_user.id).all()
 
     return ReviewsWithStatsResponse(
-        reviews=reviews,
+        reviews=[ReviewResponse.from_orm(r) for r in reviews],
         rating=current_user.rating or 0.0,
         reviewsCount=current_user.reviewsCount or 0
     )

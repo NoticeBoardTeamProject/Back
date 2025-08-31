@@ -911,10 +911,6 @@ async def create_post(
         raise HTTPException(status_code=400, detail="Price cannot be less than 0")
 
     import re
-    if re.search(r"\d", title):
-        raise HTTPException(status_code=400, detail="Title cannot contain numbers")
-    if re.search(r"\d", caption):
-        raise HTTPException(status_code=400, detail="Caption cannot contain numbers")
     if tags and re.search(r"\d", tags):
         raise HTTPException(status_code=400, detail="Tags cannot contain numbers")
 

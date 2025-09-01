@@ -760,19 +760,105 @@ def reset_password_form(token: str):
     </html>
     """)
 
-@app.get("/verify-email")
+@app.get("/verify-email", response_class=HTMLResponse, tags=["User"])
 def verify_email(token: str, db: Session = Depends(get_db)):
+    from jose import jwt, JWTError
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email = payload.get("sub")
         user = db.query(User).filter_by(email=email).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
+
         user.isEmailConfirmed = True
         db.commit()
-        return {"message": "Email confirmed!"}
+
+        return HTMLResponse("""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <title>Email Confirmed</title>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    background-color: #f0f2f5;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    height: 100vh;
+                    margin: 0;
+                }
+                .box {
+                    background-color: #fff;
+                    padding: 40px;
+                    border-radius: 12px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                    text-align: center;
+                    max-width: 400px;
+                }
+                h2 {
+                    color: #2ecc71;
+                    margin-bottom: 20px;
+                }
+                p {
+                    color: #555;
+                    font-size: 16px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="box">
+                <h2>Email confirmed successfully ✅</h2>
+                <p>You can now use your account.</p>
+            </div>
+        </body>
+        </html>
+        """)
     except JWTError:
-        raise HTTPException(status_code=400, detail="Invalid token")
+        return HTMLResponse("""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <title>Email Confirmation Failed</title>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    background-color: #f0f2f5;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    height: 100vh;
+                    margin: 0;
+                }
+                .box {
+                    background-color: #fff;
+                    padding: 40px;
+                    border-radius: 12px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                    text-align: center;
+                    max-width: 400px;
+                }
+                h2 {
+                    color: #c0392b;
+                    margin-bottom: 20px;
+                }
+                p {
+                    color: #555;
+                    font-size: 16px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="box">
+                <h2>❌ Invalid or expired link</h2>
+                <p>Please request a new verification email and try again.</p>
+            </div>
+        </body>
+        </html>
+        """)
 
 @app.get("/categories",tags=["Admin"])
 def list_categories(db: Session = Depends(get_db)):
@@ -843,7 +929,7 @@ def reset_password(
         <html>
         <head>
             <meta charset="UTF-8">
-            <title>Успішна зміна пароля</title>
+            <title>Successful password change</title>
             <style>
                 body {
                     font-family: Arial, sans-serif;
@@ -881,7 +967,7 @@ def reset_password(
         </head>
         <body>
             <div class="box">
-                <h3>Пароль успішно змінено!</h3>
+                <h3>Password successfully changed!</h3>
                 <a href="/docs" class="button">Увійти</a>
             </div>
         </body>

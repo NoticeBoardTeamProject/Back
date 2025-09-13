@@ -14,7 +14,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from models import User, Category, Post
+from models import User, Category, Post, FavoriteCategory
 from main import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, get_db
 from config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, SMTP_USER, SMTP_PASS, BASE_URL
 from database import get_db, SessionLocal, Base, engine
@@ -300,14 +300,14 @@ def create_default_owner_and_categories():
                 name="Bodya",
                 surname="Razumeyko",
                 phone="+380562323765",
-                email="razum_ld54@gmail.com",
+                email="bodyaraz7@gmail.com",
                 password=hash_password("123456789"),
                 role="Owner",
                 isVerified=True,
                 isEmailConfirmed=True
             )
             db.add(owner)
-            
+
             admin = User(
                 name="Daniil",
                 surname="Shtyvola",
@@ -366,6 +366,8 @@ def create_default_owner_and_categories():
             )
             db.add(user4)
 
+            db.commit()
+
         categories = [
             "Toys", 
             "Electronics", 
@@ -387,5 +389,23 @@ def create_default_owner_and_categories():
                 db.add(new_cat)
 
         db.commit()
+
+        owner_user = db.query(User).filter_by(email="bodyaraz7@gmail.com").first()
+        default_categories = ["Animals", "Toys"]
+
+        if owner_user:
+            for cat_name in default_categories:
+                category = db.query(Category).filter_by(name=cat_name).first()
+                if category:
+                    exists = db.query(FavoriteCategory).filter_by(
+                        user_id=owner_user.id,
+                        category_id=category.id
+                    ).first()
+                    if not exists:
+                        fav = FavoriteCategory(user_id=owner_user.id, category_id=category.id)
+                        db.add(fav)
+
+        db.commit()
+
     finally:
         db.close()

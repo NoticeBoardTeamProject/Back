@@ -701,64 +701,193 @@ def create_review(
 
 @app.get("/reset-password-form", response_class=HTMLResponse)
 def reset_password_form(token: str):
-    return HTMLResponse(content=f"""
+    return f"""
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Скидання пароля</title>
+        <title>Password reset</title>
         <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
+            * {{
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }}
+
             body {{
-                background-color: #f2f2f2;
-                font-family: Arial, sans-serif;
+                background-color: #0D0D0D;
+                font-family: 'Arial', sans-serif;
                 display: flex;
                 justify-content: center;
                 align-items: center;
-                height: 100vh;
+                min-height: 100vh;
+                padding: 20px;
+                color: #F2F2F2;
             }}
+
             .container {{
-                background-color: #fff;
-                padding: 30px;
+                background-color: #0D0D0D;
+                padding: 40px;
                 border-radius: 12px;
-                box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+                border: 2px solid #333;
                 width: 100%;
-                max-width: 400px;
+                max-width: 450px;
+                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
             }}
-            input {{
+
+            .logo {{
+                text-align: center;
+                margin-bottom: 30px;
+                color: #D9A441;
+                font-size: 28px;
+                font-weight: bold;
+                text-transform: uppercase;
+            }}
+
+            h2 {{
+                text-align: center;
+                color: #D9A441;
+                margin-bottom: 24px;
+                font-size: 24px;
+                text-transform: uppercase;
+            }}
+
+            .form-group {{
+                margin-bottom: 20px;
+            }}
+
+            label {{
+                display: block;
+                margin-bottom: 8px;
+                color: #F2F2F2;
+                font-weight: 500;
+                font-size: 14px;
+            }}
+
+            input[type="password"] {{
                 width: 100%;
-                padding: 10px;
-                margin: 10px 0;
-                border: 1px solid #ccc;
-                border-radius: 8px;
+                padding: 10px 12px;
+                height: 45.33px;
+                background-color: #1a1a1a;
+                border: 1px solid #333;
+                border-radius: 6px;
+                color: #F2F2F2;
+                font-size: 16px;
+                transition: all 0.3s ease;
             }}
+
+            input[type="password"]:focus {{
+                border-color: #D9A441;
+                outline: none;
+            }}
+
+            input[type="password"]::placeholder {{
+                color: #888;
+            }}
+
             button {{
                 width: 100%;
-                padding: 10px;
-                background-color: #4CAF50;
-                color: white;
+                padding: 14px;
+                background: linear-gradient(to bottom, #d9a441 0%, #c6a974 50%, #cc8d18 100%);
                 border: none;
-                border-radius: 8px;
-                cursor: pointer;
+                border-radius: 6px;
+                height: 45.33px;
+                color: #0D0D0D;
+                font-weight: 600;
                 font-size: 16px;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                box-shadow: inset 2px 2px 5px #c78200,
+                    inset -2px -2px 5px #ad7307,
+                    0 2px 4px rgba(0, 0, 0, 0.3);
             }}
+
             button:hover {{
-                background-color: #45a049;
+                transform: translateY(-2px);
+                box-shadow: inset 2px 2px 5px #c78200,
+                    inset -2px -2px 5px #ad7307,
+                    0 4px 8px rgba(217, 164, 65, 0.4);
+            }}
+
+            button:active {{
+                transform: translateY(0);
+            }}
+
+            button:disabled {{
+                opacity: 0.6;
+                cursor: not-allowed;
+                transform: none;
+            }}
+
+            .message {{
+                text-align: center;
+                margin-top: 20px;
+                padding: 12px;
+                border-radius: 6px;
+                font-size: 14px;
+            }}
+
+            .error {{
+                background-color: rgba(220, 53, 69, 0.1);
+                color: #f8d7da;
+                border: 1px solid #dc3545;
+            }}
+
+            .success {{
+                background-color: rgba(40, 167, 69, 0.1);
+                color: #d4edda;
+                border: 1px solid #28a745;
+            }}
+
+            @media (max-width: 480px) {{
+                .container {{
+                    padding: 30px 20px;
+                    margin: 10px;
+                }}
+
+                h2 {{
+                    font-size: 20px;
+                }}
+
+                input[type="password"] {{
+                    padding: 10px 14px;
+                    font-size: 14px;
+                }}
+
+                button {{
+                    padding: 12px;
+                    font-size: 14px;
+                }}
+            }}
+
+            button:focus {{
+                outline: 2px solid #D9A441;
+            }}
+
+            input[type="password"]:focus {{
+                outline: 2px solid #D9A441;
             }}
         </style>
     </head>
+
     <body>
         <div class="container">
-            <h2>Password reset</h2>
+            <h2>Password Reset</h2>
             <form method="post" action="/reset-password">
                 <input type="hidden" name="token" value="{token}">
-                <label for="new_password">New password:</label>
-                <input type="password" name="new_password" required>
-                <button type="submit">Confirm</button>
+
+                <div class="form-group">
+                    <label for="new_password">New Password:</label>
+                    <input type="password" name="new_password" required placeholder="Enter your new password">
+                </div>
+
+                <button type="submit">Confirm Reset</button>
             </form>
         </div>
     </body>
     </html>
-    """)
+    """
 
 @app.get("/verify-email", response_class=HTMLResponse, tags=["User"])
 def verify_email(token: str, db: Session = Depends(get_db)):
@@ -929,46 +1058,69 @@ def reset_password(
         <html>
         <head>
             <meta charset="UTF-8">
-            <title>Successful password change</title>
+            <title>Password Changed</title>
             <style>
-                body {
-                    font-family: Arial, sans-serif;
-                    background-color: #f0f2f5;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    height: 100vh;
+                * {
+                    box-sizing: border-box;
+                    margin: 0;
+                    padding: 0;
                 }
-                .box {
-                    background-color: white;
+
+                body {
+                    background-color: #0D0D0D;
+                    font-family: 'Arial', sans-serif;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    min-height: 100vh;
+                    padding: 20px;
+                    color: #F2F2F2;
+                }
+
+                .container {
+                    background-color: #0D0D0D;
                     padding: 40px;
                     border-radius: 12px;
-                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                    border: 2px solid #333;
+                    width: 100%;
+                    max-width: 450px;
                     text-align: center;
                 }
-                h3 {
-                    color: #333;
+
+                h2 {
+                    color: #D9A441;
+                    margin-bottom: 24px;
+                    font-size: 24px;
+                    text-transform: uppercase;
+                }
+
+                p {
+                    font-size: 16px;
                     margin-bottom: 20px;
+                    color: #F2F2F2;
                 }
-                a.button {
-                    display: inline-block;
-                    padding: 10px 20px;
-                    background-color: #4CAF50;
-                    color: white;
-                    border-radius: 8px;
-                    text-decoration: none;
-                    font-weight: bold;
-                    transition: background-color 0.3s ease;
-                }
-                a.button:hover {
-                    background-color: #45a049;
+
+                @media (max-width: 480px) {
+                    .container {
+                        padding: 30px 20px;
+                        margin: 10px;
+                    }
+
+                    h2 {
+                        font-size: 20px;
+                    }
+
+                    p {
+                        font-size: 14px;
+                    }
                 }
             </style>
         </head>
+
         <body>
-            <div class="box">
-                <h3>Password successfully changed!</h3>
-                <a href="/docs" class="button">Увійти</a>
+            <div class="container">
+                <h2>Password Reset</h2>
+                <p>Your password has been successfully changed!</p>
             </div>
         </body>
         </html>

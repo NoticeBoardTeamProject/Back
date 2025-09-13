@@ -255,9 +255,9 @@ def send_new_post_email(to: str, post: Post) -> None:
           <h3 style="color:#007BFF; margin-bottom:5px;">{post.title}</h3>
           <p style="color:#555555; font-size:15px; line-height:1.5;">{post.caption}</p>
           
-          <p style="font-size:16px; font-weight:bold; color:#000000;">Ціна: {post.price} {currency}</p>
-          <p style="font-size:15px; color:#333333;">Стан: {condition}</p>
-          <p style="font-size:15px; color:#333333;">Локація: {location}</p>
+          <p style="font-size:16px; font-weight:bold; color:#000000;">Price: {post.price} {currency}</p>
+          <p style="font-size:15px; color:#333333;">Condition: {condition}</p>
+          <p style="font-size:15px; color:#333333;">Location: {location}</p>
 
           <div style="text-align:center; margin-top:25px;">
             <a href="{link}" style="background-color:#28a745; color:white; padding:12px 20px; border-radius:5px; text-decoration:none; font-size:16px;">View the post</a>

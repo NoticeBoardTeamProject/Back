@@ -911,35 +911,58 @@ def verify_email(token: str, db: Session = Depends(get_db)):
             <title>Email Confirmed</title>
             <style>
                 body {
-                    font-family: Arial, sans-serif;
-                    background-color: #f0f2f5;
+                    background-color: #0D0D0D;
+                    font-family: 'Arial', sans-serif;
                     display: flex;
-                    align-items: center;
                     justify-content: center;
-                    height: 100vh;
-                    margin: 0;
+                    align-items: center;
+                    min-height: 100vh;
+                    padding: 20px;
+                    color: #F2F2F2;
                 }
-                .box {
-                    background-color: #fff;
+
+                .container {
+                    background-color: #0D0D0D;
                     padding: 40px;
                     border-radius: 12px;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                    border: 2px solid #333;
+                    width: 100%;
+                    max-width: 450px;
                     text-align: center;
-                    max-width: 400px;
+                    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
                 }
+
                 h2 {
-                    color: #2ecc71;
+                    color: #D9A441;
                     margin-bottom: 20px;
+                    font-size: 24px;
+                    text-transform: uppercase;
                 }
+
                 p {
-                    color: #555;
+                    color: #F2F2F2;
                     font-size: 16px;
+                }
+
+                @media (max-width: 480px) {
+                    .container {
+                        padding: 30px 20px;
+                        margin: 10px;
+                    }
+
+                    h2 {
+                        font-size: 20px;
+                    }
+
+                    p {
+                        font-size: 14px;
+                    }
                 }
             </style>
         </head>
         <body>
-            <div class="box">
-                <h2>Email confirmed successfully ✅</h2>
+            <div class="container">
+                <h2>Email confirmed successfully</h2>
                 <p>You can now use your account.</p>
             </div>
         </body>
@@ -954,35 +977,58 @@ def verify_email(token: str, db: Session = Depends(get_db)):
             <title>Email Confirmation Failed</title>
             <style>
                 body {
-                    font-family: Arial, sans-serif;
-                    background-color: #f0f2f5;
+                    background-color: #0D0D0D;
+                    font-family: 'Arial', sans-serif;
                     display: flex;
-                    align-items: center;
                     justify-content: center;
-                    height: 100vh;
-                    margin: 0;
+                    align-items: center;
+                    min-height: 100vh;
+                    padding: 20px;
+                    color: #F2F2F2;
                 }
-                .box {
-                    background-color: #fff;
+
+                .container {
+                    background-color: #0D0D0D;
                     padding: 40px;
                     border-radius: 12px;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                    border: 2px solid #333;
+                    width: 100%;
+                    max-width: 450px;
                     text-align: center;
-                    max-width: 400px;
+                    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
                 }
+
                 h2 {
                     color: #c0392b;
                     margin-bottom: 20px;
+                    font-size: 24px;
+                    text-transform: uppercase;
                 }
+
                 p {
-                    color: #555;
+                    color: #F2F2F2;
                     font-size: 16px;
+                }
+
+                @media (max-width: 480px) {
+                    .container {
+                        padding: 30px 20px;
+                        margin: 10px;
+                    }
+
+                    h2 {
+                        font-size: 20px;
+                    }
+
+                    p {
+                        font-size: 14px;
+                    }
                 }
             </style>
         </head>
         <body>
-            <div class="box">
-                <h2>❌ Invalid or expired link</h2>
+            <div class="container">
+                <h2>Invalid or expired link</h2>
                 <p>Please request a new verification email and try again.</p>
             </div>
         </body>

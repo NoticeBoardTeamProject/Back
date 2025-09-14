@@ -308,7 +308,19 @@ def create_default_owner_and_categories():
             )
             db.add(owner)
 
-            admin = User(
+            admin1 = User(
+                name="Bogdan",
+                surname="Razum",
+                phone="+380679583107",
+                email="Razum_ld54@student.itstep.org",
+                password=hash_password("123456789"),
+                role="Admin",
+                isVerified=True,
+                isEmailConfirmed=True
+            )
+            db.add(admin1)
+
+            admin2 = User(
                 name="Daniil",
                 surname="Shtyvola",
                 phone="+380676839059",
@@ -318,7 +330,7 @@ def create_default_owner_and_categories():
                 isVerified=True,
                 isEmailConfirmed=True
             )
-            db.add(admin)
+            db.add(admin2)
 
             user1 = User(
                 name="Goku",
